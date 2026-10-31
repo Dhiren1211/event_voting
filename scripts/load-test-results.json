@@ -1,0 +1,238 @@
+{
+  "startedAt": "2026-10-31T18:52:46.137Z",
+  "finishedAt": "2026-10-31T18:53:05.733Z",
+  "config": {
+    "baseUrl": "http://localhost:3000",
+    "adminUsername": "admin",
+    "adminPassword": "***redacted***",
+    "voteTarget": 1000,
+    "voteRate": 100,
+    "readConcurrency": 500,
+    "readRequestsPerUser": 3
+  },
+  "phases": [
+    {
+      "name": "0 warmup & health",
+      "pass": true,
+      "label": "Phase 0 — warmup & health",
+      "total": 21,
+      "success2xx": 21,
+      "matched": 16,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 21
+      },
+      "durationMs": 348.381166,
+      "rps": 60.27880393511284,
+      "meanMs": 15.76114414285715,
+      "p50Ms": 7.813030999999995,
+      "p95Ms": 28.988447000000008,
+      "p99Ms": 150.220028,
+      "maxMs": 150.220028
+    },
+    {
+      "name": "1 admin setup",
+      "pass": true,
+      "label": "Phase 1 — admin setup",
+      "total": 5,
+      "success2xx": 5,
+      "matched": 5,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 5
+      },
+      "durationMs": 28.491194999999948,
+      "rps": 175.49281453445562,
+      "meanMs": 21.374628400000006,
+      "p50Ms": 8.091066999999953,
+      "p95Ms": 79.43916899999999,
+      "p99Ms": 79.43916899999999,
+      "maxMs": 79.43916899999999
+    },
+    {
+      "name": "2 read load",
+      "pass": true,
+      "label": "Phase 2 — read load",
+      "total": 1500,
+      "success2xx": 1500,
+      "matched": 1500,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 1500
+      },
+      "durationMs": 6066.905419,
+      "rps": 247.2430170581501,
+      "meanMs": 1818.7972458373317,
+      "p50Ms": 1969.66554,
+      "p95Ms": 2597.0040520000002,
+      "p99Ms": 2799.5896770000004,
+      "maxMs": 3107.473824
+    },
+    {
+      "name": "3 vote submission",
+      "pass": true,
+      "label": "Phase 3 — vote submission",
+      "total": 1000,
+      "success2xx": 1000,
+      "matched": 1000,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 1000
+      },
+      "durationMs": 9320.389663999998,
+      "rps": 107.29165153496743,
+      "meanMs": 655.3084780649991,
+      "p50Ms": 624.1628309999996,
+      "p95Ms": 953.7395770000003,
+      "p99Ms": 969.9909950000001,
+      "maxMs": 973.1583819999996,
+      "votesAccepted": 1000
+    },
+    {
+      "name": "4 duplicate rejection",
+      "pass": true,
+      "label": "Phase 4 — duplicate rejection",
+      "total": 200,
+      "success2xx": 0,
+      "matched": 200,
+      "networkErrors": 0,
+      "statuses": {
+        "409": 200
+      },
+      "durationMs": 854.7504939999999,
+      "rps": 233.9864105419283,
+      "meanMs": 555.2124912,
+      "p50Ms": 544.7377859999979,
+      "p95Ms": 678.8550359999972,
+      "p99Ms": 690.8838660000001,
+      "maxMs": 693.7414790000003
+    },
+    {
+      "name": "5 same-device race",
+      "pass": true,
+      "label": "Phase 5 — same-device race",
+      "total": 100,
+      "success2xx": 5,
+      "matched": 100,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 5,
+        "409": 20,
+        "429": 75
+      },
+      "durationMs": 411.47761399999945,
+      "rps": 243.0265866176626,
+      "meanMs": 68.7197623799998,
+      "p50Ms": 66.30100200000015,
+      "p95Ms": 112.51445999999851,
+      "p99Ms": 119.18141699999978,
+      "maxMs": 120.43449200000032,
+      "tokensWithExactlyOne": 5
+    },
+    {
+      "name": "6 paused rejection",
+      "pass": true,
+      "label": "Phase 6 — paused rejection",
+      "total": 102,
+      "success2xx": 2,
+      "matched": 102,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 2,
+        "403": 100
+      },
+      "durationMs": 693.7297729999991,
+      "rps": 147.03131387731304,
+      "meanMs": 510.1589570294116,
+      "p50Ms": 524.9180070000002,
+      "p95Ms": 664.4020969999983,
+      "p99Ms": 677.242973999997,
+      "maxMs": 680.3414470000025,
+      "pausedMatched": 100
+    },
+    {
+      "name": "7 closed rejection",
+      "pass": true,
+      "label": "Phase 7 — closed rejection",
+      "total": 101,
+      "success2xx": 1,
+      "matched": 101,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 1,
+        "403": 100
+      },
+      "durationMs": 401.8294859999987,
+      "rps": 251.35039492846056,
+      "meanMs": 228.94755620792074,
+      "p50Ms": 247.63087399999858,
+      "p95Ms": 383.3880659999995,
+      "p99Ms": 394.5859509999973,
+      "maxMs": 397.45677400000204,
+      "closedMatched": 100
+    },
+    {
+      "name": "8 durability verification",
+      "pass": true,
+      "label": "Phase 8 — durability verification",
+      "total": 1,
+      "success2xx": 1,
+      "matched": 1,
+      "networkErrors": 0,
+      "statuses": {
+        "200": 1
+      },
+      "durationMs": 0.00041899999996530823,
+      "rps": 2386634.8450663406,
+      "meanMs": 30.464601000003313,
+      "p50Ms": 30.464601000003313,
+      "p95Ms": 30.464601000003313,
+      "p99Ms": 30.464601000003313,
+      "maxMs": 30.464601000003313
+    }
+  ],
+  "observed": {
+    "participantCount": 29,
+    "phase3AcceptedVotes": 1000,
+    "raceSuccesses": 5,
+    "raceRejects": 95,
+    "raceAnomalies": 0,
+    "expectedTotalVotes": 1005,
+    "serverTotalVotes": 1005,
+    "top5Results": [
+      {
+        "participantId": 3,
+        "name": "Dong & Band",
+        "votes": 36
+      },
+      {
+        "participantId": 5,
+        "name": "Himalayan Jam",
+        "votes": 36
+      },
+      {
+        "participantId": 2,
+        "name": "Samin Yakka",
+        "votes": 36
+      },
+      {
+        "participantId": 1,
+        "name": "Shakti Man Tamang",
+        "votes": 36
+      },
+      {
+        "participantId": 4,
+        "name": "Thapa Manjil",
+        "votes": 36
+      }
+    ]
+  },
+  "checks": {
+    "allPhase3VotesAccepted": true,
+    "allDuplicatesRejected409": true,
+    "raceExactlyOneSuccessPerToken": true,
+    "pausedAndClosedAll403": true,
+    "durableTotalMatches": true
+  },
+  "overallPass": true
+}

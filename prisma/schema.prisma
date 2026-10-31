@@ -1,0 +1,104 @@
+// Nepal Grand Tihar Festival 2026 — Audience Voting System
+// Nepalese Community in Busan (NCB)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Administrators & sessions
+// ---------------------------------------------------------------------------
+
+model Admin {
+  id           Int            @id @default(autoincrement())
+  username     String         @unique
+  passwordHash String // scrypt: "salt:hash"
+  createdAt    DateTime       @default(now())
+  sessions     AdminSession[]
+}
+
+model AdminSession {
+  id        String   @id // sha256 hash of the session token (raw token lives only in the cookie)
+  adminId   Int
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([adminId])
+}
+
+// ---------------------------------------------------------------------------
+// Participants (flexible structure: not every entry has every field)
+// ---------------------------------------------------------------------------
+
+model Participant {
+  id             Int       @id @default(autoincrement())
+  name           String // participant or performance name (exact from official sheet)
+  performance    String? // e.g. "Live Singing", "Group Dance", "Band Performance"
+  category       String? // section: SINGING | DANCE | RAP | BEATBOXING | INSTRUMENTAL | CULTURAL
+  classification String? // SOLO | GROUP
+  members        String? // semicolon-separated member names, when provided
+  affiliation    String? // university / institution, when provided
+  photoUrl       String? // served via /api/media/...
+  sortOrder      Int       @default(0) // preserves the official sheet order
+  isActive       Boolean   @default(true)
+  needsReview    Boolean   @default(false) // flagged for administrative verification
+  reviewNote     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  votes          Vote[]
+
+  @@index([isActive, sortOrder])
+}
+
+// ---------------------------------------------------------------------------
+// Votes — one vote per device, enforced by the unique deviceTokenHash index
+// ---------------------------------------------------------------------------
+
+model Vote {
+  id              Int         @id @default(autoincrement())
+  participantId   Int
+  participant     Participant @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  deviceTokenHash String      @unique // sha256(device token) — the raw token never touches the DB
+  ipHash          String? // sha256(ip) for abuse auditing, no PII stored
+  userAgent       String?
+  createdAt       DateTime    @default(now())
+
+  @@index([participantId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Event-wide voting status — single authoritative row (id = 1)
+// ---------------------------------------------------------------------------
+
+model VotingConfig {
+  id                Int       @id @default(1)
+  status            String    @default("CLOSED") // OPEN | PAUSED | CLOSED
+  closedPermanently Boolean   @default(false) // once closed, cannot be reopened
+  openedAt          DateTime?
+  closedAt          DateTime?
+  updatedAt         DateTime  @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Audit log for administrative actions
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String // e.g. VOTING_OPEN, PARTICIPANT_UPDATE, PHOTO_UPLOAD, LOGIN_SUCCESS...
+  actor     String? // admin username
+  details   String? // JSON payload with safe, non-secret details
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
