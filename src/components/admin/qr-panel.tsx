@@ -17,10 +17,10 @@ export function QrPanel() {
   const [previewKey, setPreviewKey] = useState(0)
   const [downloading, setDownloading] = useState<'png' | 'svg' | null>(null)
 
-  // Default to the current origin (works when reached via the public URL).
+  // Default to the voting page on the current origin (works when reached via the public URL).
   useEffect(() => {
     if (!url && typeof window !== 'undefined') {
-      setUrl(window.location.origin + '/')
+      setUrl(window.location.origin + '/vote')
     }
   }, [url])
 
@@ -58,7 +58,7 @@ export function QrPanel() {
         </CardTitle>
         <CardDescription className="text-xs">
           Print this code and place it on audience tables. Scanning it with a phone camera opens the public voting page
-          directly — no app installation or registration required.
+          (/vote) directly — no app installation or registration required.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -81,7 +81,7 @@ export function QrPanel() {
                   id="qr-url"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://your-domain.com/"
+                  placeholder="https://your-domain.com/vote"
                   className="h-9"
                   inputMode="url"
                 />
