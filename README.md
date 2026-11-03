@@ -77,16 +77,29 @@ Notes:
 
 ## 5. How voting works
 
-1. Visitor scans the QR code → lands on `/` → the app generates a **cryptographically secure device token** (256-bit, `crypto.randomBytes`) and stores it in `localStorage`.
-2. The visitor picks **one** participant, confirms in a dialog, and the app POSTs to `/api/public/vote` with `{ participantId, token }`.
-3. The server:
+1. Visitor scans the QR code → lands on the **voting lobby (`/queue`)** → the app generates a **cryptographically secure device token** (256-bit, `crypto.randomBytes`) and stores it in `localStorage`.
+2. While voting is **OPEN**, the visitor taps **“Vote now”** and takes a place in the **admission queue** (see below). When slots are free — the common case at moderate traffic — admission is instant and the visitor never notices the queue. When a crowd taps at once, the lobby shows a live position (e.g. “#12 in line, about 2 min”) and the voting page opens **automatically** when it is the device's turn.
+3. The visitor picks **one** participant on `/vote`, confirms in a dialog, and the app POSTs to `/api/public/vote` with `{ participantId, token }`.
+4. The server:
    - rate-limits per token (5/min) and per IP (generous — venue NAT);
    - checks the event-wide voting status (cached 2 s, then re-verified fresh);
    - validates the participant exists and is active;
    - **INSERTs the vote** — the UNIQUE index on `votes.deviceTokenHash` (SHA-256 of the token; the raw token never touches the database) makes duplicate votes impossible **at the database level**, even for simultaneous requests;
    - re-checks voting status after the insert and rolls back if the organizer closed/paused in the milliseconds in between;
+   - releases the device's queue slot **immediately** so the next devices in line are admitted without waiting;
    - returns success **only after the row is durably committed**.
-4. The device can never vote again — enforced by the database, independent of the frontend.
+5. The device can never vote again — enforced by the database, independent of the frontend.
+
+### Admission queue (waiting room)
+
+The queue exists to absorb the exact moment hundreds of audience members tap “Vote now” simultaneously (typically right after the host announces voting):
+
+- **FIFO admission in batches** — at most `QUEUE_ACTIVE_SLOTS` devices (default 40) hold a valid pass at any moment; everyone else waits in line on the lobby page with a live position and ETA.
+- **Short-lived passes** — each admitted device gets a pass valid for `QUEUE_PASS_TTL_MIN` minutes (default 10). Expired passes are purged automatically, freeing slots; a device that lets its pass lapse goes to the back of the line.
+- **Slot release on vote** — voting succeeds → slot freed instantly → the line keeps moving at roughly `QUEUE_ACTIVE_SLOTS × 80` votes/hour minimum, far above the realistic per-minute pace of one human picking one act.
+- **Pause keeps spots** — if the organizer pauses voting, the line is frozen and every device keeps its place (“Your spot is saved — no need to rejoin”). Resume continues admissions. **Open** (fresh start) and **Close** (permanent) clear the queue so no stale devices are admitted first.
+- **Server-authoritative** — positions, passes, and admission all live in the database (`QueueEntry`); the client cannot skip the line by tampering with page state. The lobby polls `/api/public/queue/state` every 4–8 s (adaptive, slower when far back).
+- **Scope (disclosed)** — the queue gates *page admission* (the burst vector). The vote API itself is protected by rate limits + the one-vote-per-device DB constraint as before; a scripted client bypassing the UI is throttled by those layers, not by the queue.
 
 **Honest limitation:** device tokens are not verified human identity. If a visitor clears browser storage or opens a different browser, they can obtain a new token. This is inherent to QR-based anonymous audience voting without personal identification; the token mechanism raises the bar (no accidental double-votes, no casual duplicates) but cannot stop a determined actor with unlimited browsers. Results privacy does not depend on this: vote counts are never exposed publicly.
 
@@ -148,12 +161,15 @@ Infrastructure caveats (disclosed):
 2. `npm install && npx prisma db push && npx prisma generate`
 3. Build & start: `npm run build && npm start` (or any Next.js-compatible host; the app uses no serverless-incompatible features, but SQLite requires a **persistent filesystem** — not read-only/ephemeral serverless).
 4. Uploads: set `UPLOAD_DIR` to a persistent directory. (For multi-instance deployments, replace SQLite with Postgres and local uploads with object storage — S3/R2 — as noted in §7.)
-5. Open `/admin`, sign in, **open voting**, then open the **QR Code** tab, set the public URL to the deployed domain, and print the QR code.
-6. After the event: pause/close voting, export CSVs (results + raw votes) from the dashboard.
+5. Open `/admin`, sign in, **open voting**, then open the **QR Code** tab, set the public URL to the deployed domain (defaults to `/queue?auto=1`, the voting lobby), and print the QR code.
+6. Queue tuning: raise `QUEUE_ACTIVE_SLOTS` if your host handled the load test comfortably (e.g. 80–120 on a fast disk); keep `QUEUE_PASS_TTL_MIN` at ~10 min so abandoned slots recycle quickly.
+7. After the event: pause/close voting, export CSVs (results + raw votes) from the dashboard.
 
 ## 10. Testing checklist (verified in-browser + API)
 
-**Functional** — public page loads; 29 participants in official order; search & category filters; photo upload → public display; admin CRUD/reorder/deactivate; open→pause→resume→close-permanently flow; one-vote-per-device confirmation screen; CSV export (results & raw votes); QR preview + PNG/SVG download. ✅
+**Functional** — public pages load (landing, lobby, voting); 29 participants in official order; search & category filters; photo upload → public display; admin CRUD/reorder/deactivate; open→pause→resume→close-permanently flow; **queue: join → position → batch admission → auto-redirect → vote → slot release**; **pause holds queue spots; resume continues without re-joining**; one-vote-per-device confirmation screen; CSV export (results & raw votes); QR preview + PNG/SVG download. ✅
+
+**Queue under burst (measured)** — 60 devices joined `/api/public/queue/join` simultaneously: all 60 got 200 responses, at most `QUEUE_ACTIVE_SLOTS` admitted (exactly 40 in DB after the trailing admission cycle), the rest WAITING with positions; passes unique per device; after a successful vote the device's slot was released immediately (queue count dropped to 0). ✅
 
 **Security** — unauthenticated admin access → 401; public APIs expose no counts; duplicate votes → 409; invalid participant → 404; invalid/malformed input → 400; votes after pause/close → 403; `.gif` upload → 415; `javascript:` QR URL → 400; path traversal → 404; delete-with-votes → 409; login brute-force → 429 then recovery. ✅
 
@@ -163,6 +179,7 @@ Infrastructure caveats (disclosed):
 
 - Device tokens ≠ verified identity (inherent to anonymous audience voting; see §5).
 - SQLite single-writer: measured 107 votes/s on this host — sufficient for the stated target, but not horizontally scalable; use Postgres for multi-instance deployments.
-- In-memory rate limiting/caching is per-process — correct for the intended single-instance deployment.
+- In-memory rate limiting/caching/queue mutex are per-process — correct for the intended single-instance deployment; a multi-instance deployment would need shared queue state (Postgres/Redis).
+- Queue positions shown during a simultaneous join burst can be transiently off-by-a-few until the next poll (≈4–8 s) — admission order itself is always FIFO and slot counts are exact.
 - The dev server (used for the measured results) is slower than a production build; production numbers will be better.
 - Load-test artifacts live in `scripts/` (`load-test.mjs`, `load-test-results.json`); the admin **Reset votes** endpoint (`POST /api/admin/dev/reset-votes`) exists to clear test data before the real event and is admin-only + audit-logged.

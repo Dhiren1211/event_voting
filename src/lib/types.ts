@@ -20,6 +20,17 @@ export type DeviceVoteState = {
   votedAt: string | null
 }
 
+export type QueueClientState =
+  | { status: 'WAITING'; position: number; ahead: number; etaSeconds: number | null }
+  | { status: 'ADMITTED'; pass: string; expiresAt: string }
+
+export type QueueApiResponse = {
+  ok?: boolean
+  votingStatus: VotingStatusInfo['status']
+  closedPermanently: boolean
+  queue: QueueClientState | null
+}
+
 export const CATEGORY_LABELS: Record<string, string> = {
   SINGING: 'Singing',
   DANCE: 'Dance',

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Search, ShieldCheck, CheckCircle2, AlertCircle, RotateCw } from 'lucide-react'
 import Link from 'next/link'
 import { Input } from '@/components/ui/input'
@@ -19,10 +20,17 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { StatusBadge } from '@/components/voting/status-badge'
 import { ParticipantCard, type VoteButtonState } from '@/components/voting/participant-card'
-import { CATEGORY_LABELS, type DeviceVoteState, type ParticipantPublic, type VotingStatusInfo } from '@/lib/types'
+import {
+  CATEGORY_LABELS,
+  type DeviceVoteState,
+  type ParticipantPublic,
+  type QueueApiResponse,
+  type VotingStatusInfo,
+} from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const TOKEN_KEY = 'ngtf_device_token'
+const PASS_KEY = 'ngtf_queue_pass'
 
 async function api<T>(url: string, init?: RequestInit): Promise<{ status: number; data: T | null }> {
   try {
@@ -54,6 +62,7 @@ function formatVotedAt(iso: string | null): string | null {
 }
 
 export function VotingPage() {
+  const router = useRouter()
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
   const [token, setToken] = useState<string | null>(null)
   const [status, setStatus] = useState<VotingStatusInfo | null>(null)
@@ -77,9 +86,9 @@ export function VotingPage() {
     const { status: code, data } = await api<VotingStatusInfo>('/api/public/status')
     if (code === 200 && data) {
       setStatus({ status: data.status, closedPermanently: data.closedPermanently })
-      return true
+      return data
     }
-    return false
+    return null
   }, [])
 
   const loadVoteState = useCallback(async (t: string) => {
@@ -87,7 +96,62 @@ export function VotingPage() {
       method: 'POST',
       body: JSON.stringify({ token: t }),
     })
-    if (code === 200 && data) setVoteState({ voted: data.voted, participantName: data.participantName, votedAt: data.votedAt })
+    if (code === 200 && data) {
+      const s = { voted: data.voted, participantName: data.participantName, votedAt: data.votedAt }
+      setVoteState(s)
+      return s
+    }
+    return null
+  }, [])
+
+  /**
+   * Queue admission gate — the voting page only renders for devices holding
+   * a valid admission pass while voting is OPEN. Devices without one are
+   * sent to the lobby, which puts them in line (admission is instant when
+   * slots are free, so low traffic never notices the queue).
+   */
+  const ensureAdmitted = useCallback(async (t: string): Promise<boolean> => {
+    let storedPass: string | null = null
+    try {
+      storedPass = sessionStorage.getItem(PASS_KEY)
+    } catch {
+      storedPass = null
+    }
+
+    const stateRes = await api<QueueApiResponse>('/api/public/queue/state', {
+      method: 'POST',
+      body: JSON.stringify({ token: t, ...(storedPass ? { pass: storedPass } : {}) }),
+    })
+    // Voting is no longer open — no admission needed, /vote renders its own banners.
+    if (stateRes.data && stateRes.data.votingStatus !== 'OPEN') return true
+
+    const held = stateRes.data?.queue
+    if (held?.status === 'ADMITTED') {
+      try {
+        sessionStorage.setItem(PASS_KEY, held.pass)
+      } catch {
+        /* ignore */
+      }
+      return true
+    }
+
+    // Not in line / no valid pass — try to join right now. When the queue
+    // has free slots this admits instantly and the visitor never sees a wait.
+    const joinRes = await api<QueueApiResponse>('/api/public/queue/join', {
+      method: 'POST',
+      body: JSON.stringify({ token: t }),
+    })
+    const joined = joinRes.data?.queue
+    if (joined?.status === 'ADMITTED') {
+      try {
+        sessionStorage.setItem(PASS_KEY, joined.pass)
+      } catch {
+        /* ignore */
+      }
+      return true
+    }
+    // Voting is open but this device must wait its turn.
+    return false
   }, [])
 
   const initialize = useCallback(async () => {
@@ -104,11 +168,24 @@ export function VotingPage() {
     tokenRef.current = t
     setToken(t)
 
-    // 2. Status + participants + this device's vote state.
-    const [okStatus, okParticipants] = await Promise.all([loadStatus(), loadParticipants()])
-    if (t) await loadVoteState(t)
-    setPhase(okStatus || okParticipants ? 'ready' : 'error')
-  }, [loadParticipants, loadStatus, loadVoteState])
+    // 2. Status + this device's vote state — the queue gate depends on both.
+    const st = await loadStatus()
+    const vs = t ? await loadVoteState(t) : null
+
+    // 3. Admission gate while voting is open and this device has not voted.
+    if (t && st?.status === 'OPEN' && !vs?.voted) {
+      const admitted = await ensureAdmitted(t)
+      if (!admitted) {
+        // Off to the lobby — the device keeps its place in line there.
+        router.replace('/queue?auto=1')
+        return
+      }
+    }
+
+    // 4. Participant list (loaded only for admitted / browse-mode devices).
+    const okParticipants = await loadParticipants()
+    setPhase(!!(st || okParticipants) ? 'ready' : 'error')
+  }, [ensureAdmitted, loadParticipants, loadStatus, loadVoteState, router])
 
   useEffect(() => {
     void initialize()
@@ -171,10 +248,12 @@ export function VotingPage() {
       }
       setSubmitting(true)
       try {
-        const { status: code, data } = await api<{ participantName?: string; votedAt?: string; error?: string }>(
-          '/api/public/vote',
-          { method: 'POST', body: JSON.stringify({ participantId: participant.id, token: t }) }
-        )
+        const { status: code, data } = await api<{
+          ok?: boolean
+          participantName?: string
+          votedAt?: string
+          error?: string
+        }>('/api/public/vote', { method: 'POST', body: JSON.stringify({ participantId: participant.id, token: t }) })
         if (code === 200 && data?.ok) {
           setVoteState({
             voted: true,

@@ -43,8 +43,9 @@ export function LandingCta() {
         asChild
         className="h-12 w-full max-w-sm rounded-xl bg-teal-600 px-10 text-base font-semibold shadow-sm hover:bg-teal-700 sm:h-14 sm:text-lg"
       >
-        <Link href="/vote">
-          {open ? 'Vote now' : 'Go to voting page'}
+        {/* The lobby enforces admission control: ?auto=1 joins the line instantly. */}
+        <Link href="/queue?auto=1">
+          {open ? 'Vote now' : 'Check voting status'}
           <ArrowRight className="ml-1 h-4.5 w-4.5" aria-hidden />
         </Link>
       </Button>

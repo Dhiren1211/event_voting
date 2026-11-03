@@ -17,10 +17,10 @@ export function QrPanel() {
   const [previewKey, setPreviewKey] = useState(0)
   const [downloading, setDownloading] = useState<'png' | 'svg' | null>(null)
 
-  // Default to the voting page on the current origin (works when reached via the public URL).
+  // Default to the voting lobby on the current origin (works when reached via the public URL).
   useEffect(() => {
     if (!url && typeof window !== 'undefined') {
-      setUrl(window.location.origin + '/vote')
+      setUrl(window.location.origin + '/queue?auto=1')
     }
   }, [url])
 
@@ -57,8 +57,9 @@ export function QrPanel() {
           Voting QR code
         </CardTitle>
         <CardDescription className="text-xs">
-          Print this code and place it on audience tables. Scanning it with a phone camera opens the public voting page
-          (/vote) directly — no app installation or registration required.
+          Print this code and place it on audience tables. Scanning it with a phone camera opens the voting lobby
+          (/queue) — audience members take a number in line and the voting page opens for them automatically. No app
+          installation or registration required.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -81,7 +82,7 @@ export function QrPanel() {
                   id="qr-url"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://your-domain.com/vote"
+                  placeholder="https://your-domain.com/queue"
                   className="h-9"
                   inputMode="url"
                 />

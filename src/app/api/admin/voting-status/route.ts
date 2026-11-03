@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { jsonError, jsonOk, getClientIp, readJson } from '@/lib/api'
 import { getAdmin, audit } from '@/lib/auth'
 import { applyVotingAction, getVotingState } from '@/lib/voting'
+import { clearQueue } from '@/lib/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,13 @@ export async function POST(req: NextRequest) {
 
   const result = await applyVotingAction(action)
   if (!result.ok) return jsonError('INVALID_TRANSITION', 409, { message: result.error })
+
+  // Fresh queue when voting opens for the first time; discard the line when
+  // voting closes for good. A resume after a pause keeps the line intact —
+  // waiting devices hold their spots, as the lobby promises.
+  if (action === 'open' || action === 'close') {
+    await clearQueue()
+  }
 
   await audit(
     `VOTING_${action.toUpperCase()}`,

@@ -89,6 +89,23 @@ model VotingConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Voting queue — virtual waiting room that admits devices in small batches
+// so a simultaneous crowd cannot stampede the voting page / database.
+// ---------------------------------------------------------------------------
+
+model QueueEntry {
+  id            Int       @id @default(autoincrement())
+  tokenHash     String    @unique // sha256(device token) — one queue slot per device
+  status        String    @default("WAITING") // WAITING | ADMITTED
+  enqueuedAt    DateTime  @default(now())
+  admittedAt    DateTime?
+  passToken     String?   @unique // short-lived admission pass returned to the client
+  passExpiresAt DateTime? // when the pass lapses the slot is freed for the next device
+
+  @@index([status, enqueuedAt])
+}
+
+// ---------------------------------------------------------------------------
 // Audit log for administrative actions
 // ---------------------------------------------------------------------------
 

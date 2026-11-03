@@ -1,0 +1,761 @@
+     1→#!/usr/bin/env node
+     2→/**
+     3→ * load-test.mjs — zero-dependency load test for the
+     4→ * Nepal Grand Tihar Festival 2026 audience voting system
+     5→ * (Next.js dev server, Prisma/SQLite backend).
+     6→ *
+     7→ * Requirements: Node >= 18 (built for Node 24) — global fetch, global
+     8→ * performance.now(), AbortSignal.timeout(), Headers#getSetCookie().
+     9→ * No npm dependencies.
+    10→ *
+    11→ * Usage:
+    12→ *   ADMIN_PASSWORD=secret node scripts/load-test.mjs
+    13→ *
+    14→ *   BASE_URL=http://localhost:3000 ADMIN_USERNAME=admin ADMIN_PASSWORD=secret \
+    15→ *   VOTE_TARGET=1000 VOTE_RATE=100 READ_CONCURRENCY=500 READ_REQUESTS_PER_USER=3 \
+    16→ *   node scripts/load-test.mjs
+    17→ *
+    18→ * CLI flags (override env vars): --base-url=... --admin-username=...
+    19→ *   --admin-password=... --vote-target=N --vote-rate=N --read-concurrency=N
+    20→ *   --read-requests-per-user=N
+    21→ *
+    22→ * Exit code: 0 = all checks passed, 1 = failed check(s) or fatal error.
+    23→ * Full metrics are written to scripts/load-test-results.json (next to this file).
+    24→ */
+    25→
+    26→import crypto from 'node:crypto';
+    27→import fs from 'node:fs';
+    28→import path from 'node:path';
+    29→import { fileURLToPath } from 'node:url';
+    30→
+    31→// ---------------------------------------------------------------------------
+    32→// Configuration (CLI flags > env vars > defaults)
+    33→// ---------------------------------------------------------------------------
+    34→
+    35→const REQUEST_TIMEOUT_MS = 30_000;
+    36→const ADMIN_COOKIE_NAME = 'ngtf_admin_session';
+    37→const RACE_TOKENS = 5;
+    38→const RACE_FANOUT = 20;
+    39→const DUPLICATE_WAVE_SIZE = 100;
+    40→const PAUSED_CLOSED_WAVE_SIZE = 100;
+    41→const HEALTH_MAX_TRIES = 30;
+    42→const HEALTH_RETRY_MS = 1000;
+    43→const WARMUP_ROUNDS = 5;
+    44→const VOTE_BATCH_INTERVAL_MS = 1000;
+    45→
+    46→const RESULTS_PATH = path.join(
+    47→  path.dirname(fileURLToPath(import.meta.url)),
+    48→  'load-test-results.json',
+    49→);
+    50→
+    51→const FLAG_MAP = {
+    52→  'base-url': 'baseUrl',
+    53→  'admin-username': 'adminUsername',
+    54→  'admin-password': 'adminPassword',
+    55→  'vote-target': 'voteTarget',
+    56→  'vote-rate': 'voteRate',
+    57→  'read-concurrency': 'readConcurrency',
+    58→  'read-requests-per-user': 'readRequestsPerUser',
+    59→};
+    60→
+    61→function parseCliFlags(argv) {
+    62→  const out = {};
+    63→  for (let i = 0; i < argv.length; i++) {
+    64→    let key = argv[i];
+    65→    let value;
+    66→    if (key.startsWith('--')) key = key.slice(2);
+    67→    const eq = key.indexOf('=');
+    68→    if (eq !== -1) {
+    69→      value = key.slice(eq + 1);
+    70→      key = key.slice(0, eq);
+    71→    } else if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+    72→      value = argv[++i];
+    73→    } else {
+    74→      value = 'true';
+    75→    }
+    76→    if (key in FLAG_MAP) out[FLAG_MAP[key]] = value;
+    77→  }
+    78→  return out;
+    79→}
+    80→
+    81→function toPositiveInt(value, fallback) {
+    82→  const n = Number.parseInt(value, 10);
+    83→  return Number.isFinite(n) && n > 0 ? n : fallback;
+    84→}
+    85→
+    86→if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    87→  console.log(`Usage:
+    88→  ADMIN_PASSWORD=secret node scripts/load-test.mjs
+    89→
+    90→Env vars:
+    91→  BASE_URL                (default http://localhost:3000)
+    92→  ADMIN_USERNAME          (default "admin")
+    93→  ADMIN_PASSWORD          (required)
+    94→  VOTE_TARGET             (default 1000)
+    95→  VOTE_RATE               (default 100 votes/second)
+    96→  READ_CONCURRENCY        (default 500 virtual users)
+    97→  READ_REQUESTS_PER_USER  (default 3)
+    98→
+    99→CLI flags override env: --base-url --admin-username --admin-password
+   100→  --vote-target --vote-rate --read-concurrency --read-requests-per-user`);
+   101→  process.exit(0);
+   102→}
+   103→
+   104→const flags = parseCliFlags(process.argv.slice(2));
+   105→const env = process.env;
+   106→
+   107→const CONFIG = {
+   108→  baseUrl: (flags.baseUrl ?? env.BASE_URL ?? 'http://localhost:3000').replace(/\/+$/, ''),
+   109→  adminUsername: flags.adminUsername ?? env.ADMIN_USERNAME ?? 'admin',
+   110→  adminPassword: flags.adminPassword ?? env.ADMIN_PASSWORD ?? '',
+   111→  voteTarget: toPositiveInt(flags.voteTarget ?? env.VOTE_TARGET, 1000),
+   112→  voteRate: toPositiveInt(flags.voteRate ?? env.VOTE_RATE, 100),
+   113→  readConcurrency: toPositiveInt(flags.readConcurrency ?? env.READ_CONCURRENCY, 500),
+   114→  readRequestsPerUser: toPositiveInt(flags.readRequestsPerUser ?? env.READ_REQUESTS_PER_USER, 3),
+   115→};
+   116→
+   117→if (!CONFIG.adminPassword) {
+   118→  console.error(
+   119→    'ERROR: ADMIN_PASSWORD is required (env var ADMIN_PASSWORD or --admin-password=...).',
+   120→  );
+   121→  process.exit(1);
+   122→}
+   123→
+   124→// ---------------------------------------------------------------------------
+   125→// Small helpers (no dependencies)
+   126→// ---------------------------------------------------------------------------
+   127→
+   128→const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+   129→
+   130→/** 43-char base64url device token, exactly like the client would generate. */
+   131→const newToken = () => crypto.randomBytes(32).toString('base64url');
+   132→
+   133→/**
+   134→ * Minimal request wrapper.
+   135→ * @returns {Promise<{status:number, body:any, ms:number, headers:Headers|null, error:string|null}>}
+   136→ *   Network/timeout failures yield status 0 with an error message.
+   137→ */
+   138→async function request(method, pathName, { json, cookie } = {}) {
+   139→  const url = `${CONFIG.baseUrl}${pathName}`;
+   140→  const headers = {};
+   141→  if (json !== undefined) headers['content-type'] = 'application/json';
+   142→  if (cookie) headers.cookie = cookie;
+   143→  const started = performance.now();
+   144→  try {
+   145→    const res = await fetch(url, {
+   146→      method,
+   147→      headers,
+   148→      body: json !== undefined ? JSON.stringify(json) : undefined,
+   149→      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+   150→    });
+   151→    const ms = performance.now() - started;
+   152→    const text = await res.text();
+   153→    let body = null;
+   154→    if (text) {
+   155→      try {
+   156→        body = JSON.parse(text);
+   157→      } catch {
+   158→        body = text; // non-JSON (e.g. HTML error page) — keep raw string
+   159→      }
+   160→    }
+   161→    return { status: res.status, body, ms, headers: res.headers, error: null };
+   162→  } catch (err) {
+   163→    return {
+   164→      status: 0,
+   165→      body: null,
+   166→      ms: performance.now() - started,
+   167→      headers: null,
+   168→      error: err?.message ?? String(err),
+   169→    };
+   170→  }
+   171→}
+   172→
+   173→/** Extract the "ngtf_admin_session=..." cookie pair from a login response. */
+   174→function extractSessionCookie(loginRes) {
+   175→  const jars = loginRes.headers?.getSetCookie?.() ?? [];
+   176→  const candidates = jars.filter((c) => c.startsWith(`${ADMIN_COOKIE_NAME}=`));
+   177→  if (candidates.length === 0) return null;
+   178→  // "ngtf_admin_session=xxx; Path=/; HttpOnly; SameSite=Lax" -> name=value only
+   179→  return candidates[candidates.length - 1].split(';')[0];
+   180→}
+   181→
+   182→// ---------------------------------------------------------------------------
+   183→// Metrics
+   184→// ---------------------------------------------------------------------------
+   185→
+   186→function newRecorder(label) {
+   187→  return {
+   188→    label,
+   189→    total: 0,
+   190→    success2xx: 0,
+   191→    matched: 0, // requests whose status equals the phase's expected status
+   192→    networkErrors: 0,
+   193→    statuses: {},
+   194→    latencies: [],
+   195→    _t0: null,
+   196→    _t1: null,
+   197→  };
+   198→}
+   199→
+   200→function record(rec, res, expectedStatus) {
+   201→  rec.total++;
+   202→  if (rec._t0 === null) rec._t0 = performance.now();
+   203→  rec._t1 = performance.now();
+   204→  if (res.status >= 200 && res.status < 300) rec.success2xx++;
+   205→  if (expectedStatus !== undefined && res.status === expectedStatus) rec.matched++;
+   206→  const key = res.status === 0 ? 'ERR' : String(res.status);
+   207→  rec.statuses[key] = (rec.statuses[key] ?? 0) + 1;
+   208→  rec.latencies.push(res.ms);
+   209→}
+   210→
+   211→/** p is 0..100; assumes ascending sorted input. Nearest-rank percentile. */
+   212→function percentile(sortedAsc, p) {
+   213→  if (sortedAsc.length === 0) return 0;
+   214→  const idx = Math.min(
+   215→    sortedAsc.length - 1,
+   216→    Math.max(0, Math.ceil((p / 100) * sortedAsc.length) - 1),
+   217→  );
+   218→  return sortedAsc[idx];
+   219→}
+   220→
+   221→function summarize(rec) {
+   222→  const latencies = [...rec.latencies].sort((a, b) => a - b);
+   223→  const n = latencies.length;
+   224→  const sum = latencies.reduce((acc, x) => acc + x, 0);
+   225→  const durationMs = rec._t0 !== null ? Math.max(rec._t1 - rec._t0, 0.000001) : 0;
+   226→  return {
+   227→    label: rec.label,
+   228→    total: rec.total,
+   229→    success2xx: rec.success2xx,
+   230→    matched: rec.matched,
+   231→    networkErrors: rec.networkErrors,
+   232→    statuses: { ...rec.statuses },
+   233→    durationMs,
+   234→    rps: durationMs > 0 ? rec.total / (durationMs / 1000) : 0,
+   235→    meanMs: n > 0 ? sum / n : 0,
+   236→    p50Ms: percentile(latencies, 50),
+   237→    p95Ms: percentile(latencies, 95),
+   238→    p99Ms: percentile(latencies, 99),
+   239→    maxMs: n > 0 ? latencies[n - 1] : 0,
+   240→  };
+   241→}
+   242→
+   243→const statusBreakdown = (statuses) =>
+   244→  Object.entries(statuses)
+   245→    .map(([k, v]) => `${k}x${v}`)
+   246→    .join(' ');
+   247→
+   248→function printSummary(rec) {
+   249→  const s = summarize(rec);
+   250→  console.log(
+   251→    `  -> total=${s.total} 2xx=${s.success2xx} matched=${s.matched} netErr=${s.networkErrors} [${statusBreakdown(s.statuses)}]`,
+   252→  );
+   253→  console.log(
+   254→    `     rps=${s.rps.toFixed(1)} mean=${s.meanMs.toFixed(1)}ms p50=${s.p50Ms.toFixed(1)}ms p95=${s.p95Ms.toFixed(1)}ms p99=${s.p99Ms.toFixed(1)}ms max=${s.maxMs.toFixed(1)}ms dur=${(s.durationMs / 1000).toFixed(2)}s`,
+   255→  );
+   256→}
+   257→
+   258→function logPhase(title) {
+   259→  console.log('\n' + '='.repeat(72));
+   260→  console.log(` ${title}`);
+   261→  console.log('='.repeat(72));
+   262→}
+   263→
+   264→// ---------------------------------------------------------------------------
+   265→// Run state (module scope so fatal errors can still persist partial metrics)
+   266→// ---------------------------------------------------------------------------
+   267→
+   268→const PHASE_REPORTS = [];
+   269→const startedAt = new Date().toISOString();
+   270→
+   271→let checkA = false; // all Phase-3 votes accepted
+   272→let checkB = false; // all duplicate replays rejected with 409
+   273→let checkC = false; // race: exactly 1 success per token
+   274→let checkD = false; // paused & closed: all 403
+   275→let checkE = false; // durable total matches
+   276→let overallPass = false;
+   277→let fatalError = null;
+   278→
+   279→let adminCookie = null;
+   280→let participantIds = [];
+   281→let votesAccepted = 0;
+   282→let raceSuccesses = 0;
+   283→let raceRejects = 0;
+   284→let raceAnomalies = 0;
+   285→let expectedTotalVotes = 0;
+   286→let serverTotalVotes = null;
+   287→let top5Results = [];
+   288→
+   289→function finishPhase(name, rec, pass, details = {}) {
+   290→  const summary = summarize(rec);
+   291→  PHASE_REPORTS.push({ name, pass: Boolean(pass), ...summary, ...details });
+   292→  console.log(`  Phase result: ${pass ? 'PASS' : 'FAIL'}`);
+   293→  return summary;
+   294→}
+   295→
+   296→function buildMetrics() {
+   297→  return {
+   298→    startedAt,
+   299→    finishedAt: new Date().toISOString(),
+   300→    config: { ...CONFIG, adminPassword: '***redacted***' },
+   301→    phases: PHASE_REPORTS,
+   302→    observed: {
+   303→      participantCount: participantIds.length,
+   304→      phase3AcceptedVotes: votesAccepted,
+   305→      raceSuccesses,
+   306→      raceRejects,
+   307→      raceAnomalies,
+   308→      expectedTotalVotes,
+   309→      serverTotalVotes,
+   310→      top5Results,
+   311→    },
+   312→    checks: {
+   313→      allPhase3VotesAccepted: checkA,
+   314→      allDuplicatesRejected409: checkB,
+   315→      raceExactlyOneSuccessPerToken: checkC,
+   316→      pausedAndClosedAll403: checkD,
+   317→      durableTotalMatches: checkE,
+   318→    },
+   319→    overallPass,
+   320→    ...(fatalError ? { fatalError } : {}),
+   321→  };
+   322→}
+   323→
+   324→function writeMetricsFile() {
+   325→  try {
+   326→    fs.mkdirSync(path.dirname(RESULTS_PATH), { recursive: true });
+   327→    fs.writeFileSync(RESULTS_PATH, `${JSON.stringify(buildMetrics(), null, 2)}\n`);
+   328→    console.log(`\nMetrics written to ${RESULTS_PATH}`);
+   329→  } catch (err) {
+   330→    console.error(`Failed to write metrics file: ${err?.message ?? err}`);
+   331→  }
+   332→}
+   333→
+   334→// ---------------------------------------------------------------------------
+   335→// Main
+   336→// ---------------------------------------------------------------------------
+   337→
+   338→async function main() {
+   339→  console.log('Tihar 2026 Audience Voting System — load test');
+   340→  console.log(`  base url   : ${CONFIG.baseUrl}`);
+   341→  console.log(`  admin user : ${CONFIG.adminUsername}`);
+   342→  console.log(
+   343→    `  vote load  : ${CONFIG.voteTarget} votes @ ${CONFIG.voteRate}/s ` +
+   344→      `(${Math.ceil(CONFIG.voteTarget / CONFIG.voteRate)} batches)`,
+   345→  );
+   346→  console.log(
+   347→    `  read load  : ${CONFIG.readConcurrency} users x ${CONFIG.readRequestsPerUser} requests ` +
+   348→      `(total ${CONFIG.readConcurrency * CONFIG.readRequestsPerUser})`,
+   349→  );
+   350→
+   351→  // ------------------------------------------------------------------
+   352→  // Phase 0 — Warmup & health
+   353→  // ------------------------------------------------------------------
+   354→  logPhase(`Phase 0 — Warmup & health (poll GET /api/public/status, max ${HEALTH_MAX_TRIES} tries)`);
+   355→  let healthy = false;
+   356→  for (let attempt = 1; attempt <= HEALTH_MAX_TRIES; attempt++) {
+   357→    const res = await request('GET', '/api/public/status');
+   358→    if (res.status === 200) {
+   359→      healthy = true;
+   360→      console.log(`  status endpoint healthy after ${attempt} attempt(s): ${JSON.stringify(res.body)}`);
+   361→      break;
+   362→    }
+   363→    console.log(
+   364→      `  attempt ${attempt}/${HEALTH_MAX_TRIES} failed (status=${res.status}${res.error ? `, ${res.error}` : ''}) — retrying in ${HEALTH_RETRY_MS}ms`,
+   365→    );
+   366→    await sleep(HEALTH_RETRY_MS);
+   367→  }
+   368→  if (!healthy) {
+   369→    throw new Error('Server never became healthy: GET /api/public/status did not return 200 in time.');
+   370→  }
+   371→
+   372→  const rec0 = newRecorder('Phase 0 — warmup & health');
+   373→  for (let i = 0; i < WARMUP_ROUNDS; i++) {
+   374→    record(rec0, await request('GET', '/api/public/status'), 200);
+   375→  }
+   376→  for (let i = 0; i < WARMUP_ROUNDS; i++) {
+   377→    record(rec0, await request('GET', '/api/public/participants'), 200);
+   378→  }
+   379→  for (let i = 0; i < WARMUP_ROUNDS; i++) {
+   380→    // Throwaway device registrations — harmless, compiles the route.
+   381→    record(rec0, await request('POST', '/api/public/device', { json: { token: newToken() } }), 200);
+   382→  }
+   383→  for (let i = 0; i < WARMUP_ROUNDS; i++) {
+   384→    // Throwaway vote attempts: status may be 200/403/404/400 depending on the
+   385→    // current voting state — any outcome still JIT-compiles the route, and any
+   386→    // accidental 200 is wiped by the Phase 1 reset. Not counted as "matched".
+   387→    record(rec0, await request('POST', '/api/public/vote', { json: { participantId: 1, token: newToken() } }));
+   388→  }
+   389→  const warmLogin = await request('POST', '/api/admin/login', {
+   390→    json: { username: CONFIG.adminUsername, password: CONFIG.adminPassword },
+   391→  });
+   392→  record(rec0, warmLogin, 200);
+   393→  printSummary(rec0);
+   394→  finishPhase('0 warmup & health', rec0, healthy && warmLogin.status === 200);
+   395→
+   396→  // ------------------------------------------------------------------
+   397→  // Phase 1 — Admin setup
+   398→  // ------------------------------------------------------------------
+   399→  logPhase('Phase 1 — Admin setup (login, reset votes, open voting, fetch participants)');
+   400→  const rec1 = newRecorder('Phase 1 — admin setup');
+   401→  const login = await request('POST', '/api/admin/login', {
+   402→    json: { username: CONFIG.adminUsername, password: CONFIG.adminPassword },
+   403→  });
+   404→  record(rec1, login, 200);
+   405→  adminCookie = extractSessionCookie(login);
+   406→  if (login.status !== 200 || !adminCookie) {
+   407→    throw new Error(
+   408→      `Admin login failed (status=${login.status}, body=${JSON.stringify(login.body)}) ` +
+   409→        `or no ${ADMIN_COOKIE_NAME} cookie was returned.`,
+   410→    );
+   411→  }
+   412→
+   413→  const resetRes = await request('POST', '/api/admin/dev/reset-votes?full=1', { cookie: adminCookie });
+   414→  record(rec1, resetRes, 200);
+   415→  if (resetRes.status !== 200) {
+   416→    throw new Error(`reset-votes?full=1 failed (status=${resetRes.status}, body=${JSON.stringify(resetRes.body)}).`);
+   417→  }
+   418→
+   419→  const openRes = await request('POST', '/api/admin/voting-status', {
+   420→    json: { action: 'open' },
+   421→    cookie: adminCookie,
+   422→  });
+   423→  record(rec1, openRes, 200);
+   424→
+   425→  const statusRes = await request('GET', '/api/public/status');
+   426→  record(rec1, statusRes, 200);
+   427→  const isOpen =
+   428→    statusRes.status === 200 &&
+   429→    statusRes.body?.status === 'OPEN' &&
+   430→    statusRes.body?.closedPermanently === false;
+   431→
+   432→  const participantsRes = await request('GET', '/api/public/participants');
+   433→  record(rec1, participantsRes, 200);
+   434→  const list = participantsRes.body?.participants;
+   435→  participantIds = (Array.isArray(list) ? list : [])
+   436→    .map((p) => p?.id)
+   437→    .filter((id) => Number.isFinite(id));
+   438→
+   439→  console.log(`  participants: ${participantIds.length} (first id: ${participantIds[0] ?? 'n/a'})`);
+   440→  if (participantIds.length !== 29) {
+   441→    console.log(`  WARNING: expected 29 active participants, got ${participantIds.length}`);
+   442→  }
+   443→
+   444→  const pass1 =
+   445→    resetRes.status === 200 &&
+   446→    openRes.status === 200 &&
+   447→    isOpen &&
+   448→    participantIds.length >= 1;
+   449→  printSummary(rec1);
+   450→  finishPhase('1 admin setup', rec1, pass1);
+   451→  if (!pass1) {
+   452→    throw new Error(
+   453→      'Phase 1 failed: voting could not be (re)opened or no participants were returned — aborting.',
+   454→    );
+   455→  }
+   456→
+   457→  // ------------------------------------------------------------------
+   458→  // Phase 2 — Read load (concurrent users x sequential GETs)
+   459→  // ------------------------------------------------------------------
+   460→  logPhase(
+   461→    `Phase 2 — Read load: ${CONFIG.readConcurrency} concurrent users x ` +
+   462→      `${CONFIG.readRequestsPerUser} GET /api/public/participants ` +
+   463→      `(total ${CONFIG.readConcurrency * CONFIG.readRequestsPerUser})`,
+   464→  );
+   465→  const rec2 = newRecorder('Phase 2 — read load');
+   466→  await Promise.all(
+   467→    Array.from({ length: CONFIG.readConcurrency }, async () => {
+   468→      for (let i = 0; i < CONFIG.readRequestsPerUser; i++) {
+   469→        record(rec2, await request('GET', '/api/public/participants'), 200);
+   470→      }
+   471→    }),
+   472→  );
+   473→  printSummary(rec2);
+   474→  finishPhase('2 read load', rec2, rec2.total > 0 && rec2.matched === rec2.total);
+   475→
+   476→  // ------------------------------------------------------------------
+   477→  // Phase 3 — Vote submission (VOTE_TARGET votes @ VOTE_RATE per second)
+   478→  // ------------------------------------------------------------------
+   479→  logPhase(
+   480→    `Phase 3 — Vote submission: ${CONFIG.voteTarget} unique tokens @ ${CONFIG.voteRate}/s ` +
+   481→      `(round-robin over ${participantIds.length} participants)`,
+   482→  );
+   483→  const rec3 = newRecorder('Phase 3 — vote submission');
+   484→  const tokens = Array.from({ length: CONFIG.voteTarget }, () => newToken());
+   485→  const usedTokens = []; // {token, participantId} in launch order (for Phase 4 replays)
+   486→
+   487→  const batchCount = Math.ceil(CONFIG.voteTarget / CONFIG.voteRate);
+   488→  const batchPromises = [];
+   489→  const schedulerStart = performance.now(); // drift-corrected pacing reference
+   490→  for (let b = 0; b < batchCount; b++) {
+   491→    const size = Math.min(CONFIG.voteRate, CONFIG.voteTarget - b * CONFIG.voteRate);
+   492→    const due = schedulerStart + b * VOTE_BATCH_INTERVAL_MS;
+   493→    const waitMs = due - performance.now();
+   494→    if (waitMs > 0) await sleep(waitMs); // sleeps only the remainder -> no drift
+   495→
+   496→    const batch = [];
+   497→    for (let i = 0; i < size; i++) {
+   498→      const idx = b * CONFIG.voteRate + i;
+   499→      const entry = { token: tokens[idx], participantId: participantIds[idx % participantIds.length] };
+   500→      batch.push(entry);
+   501→      usedTokens.push(entry);
+   502→    }
+   503→    batchPromises.push(
+   504→      Promise.all(
+   505→        batch.map(async (entry) => {
+   506→          record(rec3, await request('POST', '/api/public/vote', { json: entry }), 200);
+   507→        }),
+   508→      ),
+   509→    );
+   510→  }
+   511→  await Promise.all(batchPromises);
+   512→
+   513→  votesAccepted = rec3.statuses['200'] ?? 0;
+   514→  printSummary(rec3);
+   515→  checkA =
+   516→    votesAccepted === CONFIG.voteTarget &&
+   517→    rec3.total === CONFIG.voteTarget &&
+   518→    rec3.networkErrors === 0;
+   519→  finishPhase(
+   520→    '3 vote submission',
+   521→    rec3,
+   522→    checkA,
+   523→    { votesAccepted },
+   524→  );
+   525→
+   526→  // ------------------------------------------------------------------
+   527→  // Phase 4 — Duplicate rejection (replay used tokens, 100 + 100 concurrent)
+   528→  // ------------------------------------------------------------------
+   529→  logPhase(
+   530→    `Phase 4 — Duplicate rejection: replay ${DUPLICATE_WAVE_SIZE} + ${DUPLICATE_WAVE_SIZE} used tokens, ` +
+   531→      `${DUPLICATE_WAVE_SIZE} concurrent per wave (expect all 409 ALREADY_VOTED)`,
+   532→  );
+   533→  const rec4 = newRecorder('Phase 4 — duplicate rejection');
+   534→  const wave1 = usedTokens.slice(0, DUPLICATE_WAVE_SIZE);
+   535→  const wave2 = usedTokens.slice(DUPLICATE_WAVE_SIZE, DUPLICATE_WAVE_SIZE * 2);
+   536→  if (wave1.length < DUPLICATE_WAVE_SIZE || wave2.length < DUPLICATE_WAVE_SIZE) {
+   537→    console.log(
+   538→      `  WARNING: only ${usedTokens.length} used tokens available — waves shrank ` +
+   539→        `(${wave1.length} + ${wave2.length})`,
+   540→    );
+   541→  }
+   542→  const replay = (entry) => request('POST', '/api/public/vote', { json: entry });
+   543→  await Promise.all(wave1.map(async (entry) => record(rec4, await replay(entry), 409)));
+   544→  await Promise.all(wave2.map(async (entry) => record(rec4, await replay(entry), 409)));
+   545→  printSummary(rec4);
+   546→  const dupPass = rec4.total > 0 && rec4.matched === rec4.total && rec4.networkErrors === 0;
+   547→  finishPhase('4 duplicate rejection', rec4, dupPass);
+   548→  checkB = dupPass;
+   549→
+   550→  // ------------------------------------------------------------------
+   551→  // Phase 5 — Same-device race (5 fresh tokens x 20 strictly concurrent votes)
+   552→  // ------------------------------------------------------------------
+   553→  logPhase(
+   554→    `Phase 5 — Same-device race: ${RACE_TOKENS} fresh tokens x ${RACE_FANOUT} concurrent votes ` +
+   555→      `(expect exactly one 200 per token; rejects must be 409 ALREADY_VOTED or 429 RATE_LIMITED)`,
+   556→  );
+   557→  const rec5 = newRecorder('Phase 5 — same-device race');
+   558→  let tokensWithExactlyOne = 0;
+   559→  for (let t = 0; t < RACE_TOKENS; t++) {
+   560→    const entry = { token: newToken(), participantId: participantIds[t % participantIds.length] };
+   561→    const results = await Promise.all(
+   562→      Array.from({ length: RACE_FANOUT }, () =>
+   563→        request('POST', '/api/public/vote', { json: entry }),
+   564→      ),
+   565→    );
+   566→    let ok = 0;
+   567→    let dup = 0;
+   568→    let other = 0;
+   569→    for (const r of results) {
+   570→      record(rec5, r);
+   571→      if (r.status === 200) ok++;
+   572→      // Both rejections are valid defense layers:
+   573→      //  409 ALREADY_VOTED — database UNIQUE constraint
+   574→      //  429 RATE_LIMITED  — per-token rate limiter (5/min) rejecting the flood
+   575→      else if (r.status === 409 || r.status === 429) dup++;
+   576→      else other++;
+   577→    }
+   578→    raceSuccesses += ok;
+   579→    raceRejects += dup;
+   580→    raceAnomalies += other;
+   581→    if (ok === 1 && other === 0) tokensWithExactlyOne++;
+   582→    console.log(
+   583→      `  token ${t + 1}/${RACE_TOKENS}: 200=${ok} 409/429=${dup} other=${other} ` +
+   584→        `${ok === 1 && other === 0 ? 'OK (exactly one vote accepted)' : 'UNEXPECTED'}`,
+   585→    );
+   586→  }
+   587→  // "matched" here = requests that belonged to tokens behaving exactly as expected.
+   588→  rec5.matched = tokensWithExactlyOne * RACE_FANOUT;
+   589→  printSummary(rec5);
+   590→  const racePass =
+   591→    tokensWithExactlyOne === RACE_TOKENS &&
+   592→    raceSuccesses === RACE_TOKENS &&
+   593→    raceAnomalies === 0;
+   594→  finishPhase('5 same-device race', rec5, racePass, { tokensWithExactlyOne });
+   595→  checkC = racePass;
+   596→
+   597→  // ------------------------------------------------------------------
+   598→  // Phase 6 — Paused rejection (pause -> 100 fresh votes -> all 403 -> resume)
+   599→  // ------------------------------------------------------------------
+   600→  logPhase(
+   601→    `Phase 6 — Paused rejection: ${PAUSED_CLOSED_WAVE_SIZE} fresh-token votes while PAUSED ` +
+   602→      `(expect all 403 VOTING_PAUSED)`,
+   603→  );
+   604→  const rec6 = newRecorder('Phase 6 — paused rejection');
+   605→  const pauseRes = await request('POST', '/api/admin/voting-status', {
+   606→    json: { action: 'pause' },
+   607→    cookie: adminCookie,
+   608→  });
+   609→  record(rec6, pauseRes, 200);
+   610→  if (pauseRes.status !== 200) {
+   611→    console.log(`  WARNING: pause action returned ${pauseRes.status} (${JSON.stringify(pauseRes.body)})`);
+   612→  }
+   613→  const pausedVotes = await Promise.all(
+   614→    Array.from({ length: PAUSED_CLOSED_WAVE_SIZE }, (_, i) =>
+   615→      request('POST', '/api/public/vote', {
+   616→        json: { token: newToken(), participantId: participantIds[i % participantIds.length] },
+   617→      }),
+   618→    ),
+   619→  );
+   620→  let pausedMatched = 0;
+   621→  for (const r of pausedVotes) {
+   622→    record(rec6, r, 403);
+   623→    if (r.status === 403 && r.body?.error === 'VOTING_PAUSED') pausedMatched++;
+   624→  }
+   625→  const resumeRes = await request('POST', '/api/admin/voting-status', {
+   626→    json: { action: 'resume' },
+   627→    cookie: adminCookie,
+   628→  });
+   629→  record(rec6, resumeRes, 200);
+   630→  const pausedAllRejected =
+   631→    pausedVotes.length === PAUSED_CLOSED_WAVE_SIZE &&
+   632→    pausedVotes.every((r) => r.status === 403 && r.body?.error === 'VOTING_PAUSED');
+   633→  const pausedAdminOk = pauseRes.status === 200 && resumeRes.status === 200;
+   634→  printSummary(rec6);
+   635→  finishPhase('6 paused rejection', rec6, pausedAdminOk && pausedAllRejected, { pausedMatched });
+   636→
+   637→  // ------------------------------------------------------------------
+   638→  // Phase 7 — Closed rejection (close -> 100 fresh votes -> all 403)
+   639→  // ------------------------------------------------------------------
+   640→  logPhase(
+   641→    `Phase 7 — Closed rejection: ${PAUSED_CLOSED_WAVE_SIZE} fresh-token votes while CLOSED ` +
+   642→      `(expect all 403 VOTING_CLOSED)`,
+   643→  );
+   644→  const rec7 = newRecorder('Phase 7 — closed rejection');
+   645→  const closeRes = await request('POST', '/api/admin/voting-status', {
+   646→    json: { action: 'close' },
+   647→    cookie: adminCookie,
+   648→  });
+   649→  record(rec7, closeRes, 200);
+   650→  if (closeRes.status !== 200) {
+   651→    console.log(`  WARNING: close action returned ${closeRes.status} (${JSON.stringify(closeRes.body)})`);
+   652→  }
+   653→  const closedVotes = await Promise.all(
+   654→    Array.from({ length: PAUSED_CLOSED_WAVE_SIZE }, (_, i) =>
+   655→      request('POST', '/api/public/vote', {
+   656→        json: { token: newToken(), participantId: participantIds[i % participantIds.length] },
+   657→      }),
+   658→    ),
+   659→  );
+   660→  let closedMatched = 0;
+   661→  for (const r of closedVotes) {
+   662→    record(rec7, r, 403);
+   663→    if (r.status === 403 && r.body?.error === 'VOTING_CLOSED') closedMatched++;
+   664→  }
+   665→  const closedAllRejected =
+   666→    closedVotes.length === PAUSED_CLOSED_WAVE_SIZE &&
+   667→    closedVotes.every((r) => r.status === 403 && r.body?.error === 'VOTING_CLOSED');
+   668→  printSummary(rec7);
+   669→  // Voting is intentionally left CLOSED — Phase 1's reset re-opens on next run.
+   670→  finishPhase('7 closed rejection', rec7, closeRes.status === 200 && closedAllRejected, {
+   671→    closedMatched,
+   672→  });
+   673→  checkD = pausedAdminOk && pausedAllRejected && closeRes.status === 200 && closedAllRejected;
+   674→
+   675→  // ------------------------------------------------------------------
+   676→  // Phase 8 — Durability verification
+   677→  // ------------------------------------------------------------------
+   678→  logPhase(
+   679→    'Phase 8 — Durability verification: GET /api/admin/overview totalVotes must equal ' +
+   680→      'Phase 3 accepted + Phase 5 successes',
+   681→  );
+   682→  const rec8 = newRecorder('Phase 8 — durability verification');
+   683→  const overview = await request('GET', '/api/admin/overview', { cookie: adminCookie });
+   684→  record(rec8, overview, 200);
+   685→  expectedTotalVotes = votesAccepted + raceSuccesses;
+   686→  serverTotalVotes = overview.body ? Number(overview.body.totalVotes) : NaN;
+   687→  const results = Array.isArray(overview.body?.results) ? overview.body.results : [];
+   688→  top5Results = [...results]
+   689→    .sort((a, b) => (Number(b?.votes) || 0) - (Number(a?.votes) || 0))
+   690→    .slice(0, 5)
+   691→    .map((r) => ({ participantId: r.participantId, name: r.name, votes: r.votes }));
+   692→
+   693→  console.log(
+   694→    `  expected totalVotes = ${expectedTotalVotes} (Phase 3 accepted ${votesAccepted} + race successes ${raceSuccesses})`,
+   695→  );
+   696→  console.log(`  server   totalVotes = ${Number.isFinite(serverTotalVotes) ? serverTotalVotes : 'n/a'}`);
+   697→  checkE =
+   698→    overview.status === 200 &&
+   699→    Number.isFinite(serverTotalVotes) &&
+   700→    serverTotalVotes === expectedTotalVotes;
+   701→  printSummary(rec8);
+   702→  finishPhase('8 durability verification', rec8, checkE);
+   703→
+   704→  if (checkE) {
+   705→    console.log('  Top 5 participants by votes:');
+   706→    console.table(top5Results);
+   707→  }
+   708→
+   709→  // ------------------------------------------------------------------
+   710→  // Final verdict
+   711→  // ------------------------------------------------------------------
+   712→  logPhase('Final — Verdict & summary');
+   713→  overallPass = checkA && checkB && checkC && checkD && checkE;
+   714→
+   715→  console.log('  Checks:');
+   716→  console.log(
+   717→    `    (a) all Phase-3 votes accepted (${votesAccepted}/${CONFIG.voteTarget} got 200)         : ${checkA ? 'PASS' : 'FAIL'}`,
+   718→  );
+   719→  console.log(
+   720→    `    (b) all duplicate replays rejected 409 (${rec4.matched}/${rec4.total})                : ${checkB ? 'PASS' : 'FAIL'}`,
+   721→  );
+   722→  console.log(
+   723→    `    (c) race = exactly 1 success per token (${tokensWithExactlyOne}/${RACE_TOKENS})       : ${checkC ? 'PASS' : 'FAIL'}`,
+   724→  );
+   725→  console.log(
+   726→    `    (d) paused & closed waves all 403 (${pausedMatched}+${closedMatched}/${PAUSED_CLOSED_WAVE_SIZE * 2})    : ${checkD ? 'PASS' : 'FAIL'}`,
+   727→  );
+   728→  console.log(
+   729→    `    (e) durable total matches (${Number.isFinite(serverTotalVotes) ? serverTotalVotes : 'n/a'} == ${expectedTotalVotes})            : ${checkE ? 'PASS' : 'FAIL'}`,
+   730→  );
+   731→  console.log(`\n  OVERALL: ${overallPass ? 'PASS' : 'FAIL'}`);
+   732→
+   733→  console.log('\n  Per-phase metrics:');
+   734→  console.table(
+   735→    PHASE_REPORTS.map((p) => ({
+   736→      Phase: p.name,
+   737→      Requests: p.total,
+   738→      '2xx': p.success2xx,
+   739→      Matched: p.matched,
+   740→      NetErr: p.networkErrors,
+   741→      RPS: p.rps.toFixed(1),
+   742→      'Mean ms': p.meanMs.toFixed(1),
+   743→      P50: p.p50Ms.toFixed(1),
+   744→      P95: p.p95Ms.toFixed(1),
+   745→      P99: p.p99Ms.toFixed(1),
+   746→      Max: p.maxMs.toFixed(1),
+   747→      Result: p.pass ? 'PASS' : 'FAIL',
+   748→    })),
+   749→  );
+   750→
+   751→  writeMetricsFile();
+   752→  process.exitCode = overallPass ? 0 : 1;
+   753→}
+   754→
+   755→main().catch((err) => {
+   756→  fatalError = String(err?.message ?? err);
+   757→  console.error(`\nFATAL: ${fatalError}`);
+   758→  writeMetricsFile();
+   759→  process.exitCode = 1;
+   760→});
+   761→

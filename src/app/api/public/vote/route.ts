@@ -4,6 +4,7 @@ import { jsonError, jsonOk, getClientIp, hashIp, shortUa, readJson } from '@/lib
 import { isValidDeviceToken, sha256 } from '@/lib/device'
 import { rateLimit } from '@/lib/rate-limit'
 import { getVotingState } from '@/lib/voting'
+import { releaseQueueSlot } from '@/lib/queue'
 import { env } from '@/lib/env'
 import { Prisma } from '@prisma/client'
 
@@ -87,6 +88,10 @@ export async function POST(req: NextRequest) {
     await db.vote.delete({ where: { id: vote.id } }).catch(() => {})
     return jsonError(cfg?.status === 'PAUSED' ? 'VOTING_PAUSED' : 'VOTING_CLOSED', 403)
   }
+
+  // The device is done — free its queue slot immediately so the next
+  // devices in line are admitted without waiting for the pass TTL.
+  await releaseQueueSlot(token)
 
   return jsonOk({ ok: true, participantName: participant.name, votedAt: vote.createdAt.toISOString() })
 }

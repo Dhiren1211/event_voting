@@ -110,7 +110,7 @@ export default function LandingPage() {
         <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-between gap-2 px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:flex-row sm:px-6">
           <p className="text-sm text-zinc-600">© 2026 {EVENT_INFO.organizer}</p>
           <p className="text-xs text-zinc-500 sm:text-sm">
-            <Link href="/vote" className="font-medium text-teal-700 hover:text-teal-800">
+            <Link href="/queue" className="font-medium text-teal-700 hover:text-teal-800">
               Vote now
             </Link>
             {' · '}Voting is anonymous · One vote per device
