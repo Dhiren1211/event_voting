@@ -41,7 +41,7 @@ export function LandingCta() {
       <StatusBadge status={status} />
       <Button
         asChild
-        className="h-12 w-full max-w-xs rounded-xl bg-teal-600 px-8 text-base font-semibold shadow-sm hover:bg-teal-700 sm:w-auto"
+        className="h-12 w-full max-w-sm rounded-xl bg-teal-600 px-10 text-base font-semibold shadow-sm hover:bg-teal-700 sm:h-14 sm:text-lg"
       >
         <Link href="/vote">
           {open ? 'Vote now' : 'Go to voting page'}

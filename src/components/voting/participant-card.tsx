@@ -50,11 +50,11 @@ export const ParticipantCard = memo(function ParticipantCard({
           >
             <span
               aria-hidden
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-lg font-semibold text-zinc-400 shadow-sm ring-1 ring-zinc-200"
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-xl font-semibold text-zinc-400 shadow-sm ring-1 ring-zinc-200"
             >
               {initialsOf(participant.name)}
             </span>
-            <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">Photo coming soon</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Photo coming soon</span>
           </div>
         )}
         {participant.classification ? (
@@ -72,7 +72,7 @@ export const ParticipantCard = memo(function ParticipantCard({
         ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col gap-2.5 p-4">
+      <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex flex-wrap items-center gap-1.5">
           {participant.category ? (
             <Badge variant="secondary" className="bg-teal-50 text-teal-700 hover:bg-teal-50 border border-teal-600/10 font-medium">
@@ -80,22 +80,22 @@ export const ParticipantCard = memo(function ParticipantCard({
             </Badge>
           ) : null}
           {participant.performance ? (
-            <span className="text-xs font-medium text-zinc-500">{participant.performance}</span>
+            <span className="text-sm font-medium text-zinc-500">{participant.performance}</span>
           ) : null}
         </div>
 
-        <h3 className="text-base font-semibold leading-snug text-zinc-900">{participant.name}</h3>
+        <h3 className="text-lg font-semibold leading-snug text-zinc-900">{participant.name}</h3>
 
         {participant.affiliation ? (
-          <p className="flex items-center gap-1.5 text-xs text-zinc-500">
-            <Building2 className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden />
+          <p className="flex items-center gap-1.5 text-sm text-zinc-500">
+            <Building2 className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
             {participant.affiliation}
           </p>
         ) : null}
 
         {participant.members ? (
-          <p className="flex items-start gap-1.5 text-xs leading-relaxed text-zinc-500">
-            <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden />
+          <p className="flex items-start gap-1.5 text-sm leading-relaxed text-zinc-500">
+            <Users className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
             <span className="line-clamp-2" title={participant.members}>
               {participant.members}
             </span>
@@ -104,15 +104,15 @@ export const ParticipantCard = memo(function ParticipantCard({
 
         <div className="mt-auto pt-2">
           {buttonState === 'voted' ? (
-            <Button disabled className="w-full gap-1.5 bg-zinc-100 text-zinc-500 hover:bg-zinc-100">
-              <CheckCircle2 className="h-4 w-4 text-teal-600" aria-hidden />
+            <Button disabled className="h-11 w-full gap-1.5 bg-zinc-100 text-base text-zinc-500 hover:bg-zinc-100">
+              <CheckCircle2 className="h-4.5 w-4.5 text-teal-600" aria-hidden />
               Vote recorded
             </Button>
           ) : (
             <Button
               onClick={() => onVote(participant)}
               disabled={!canVote || submitting}
-              className="w-full font-semibold"
+              className="h-11 w-full text-base font-semibold"
               aria-label={`Vote for ${participant.name}`}
             >
               {buttonState === 'paused' ? 'Voting is paused' : buttonState === 'closed' ? 'Voting closed' : 'Vote'}

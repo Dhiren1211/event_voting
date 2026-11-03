@@ -17,14 +17,14 @@ export default function LandingPage() {
     <div className="flex min-h-screen flex-col bg-white">
       {/* ------------------------------------------------ top bar */}
       <header className="border-b border-zinc-100 bg-white">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-2.5 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 w-full max-w-5xl items-center gap-3 px-4 sm:px-6">
           <span
             aria-hidden
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-[10px] font-bold leading-none tracking-wide whitespace-nowrap text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-[11px] font-bold leading-none tracking-wide whitespace-nowrap text-white"
           >
             NCB
           </span>
-          <p className="truncate text-xs font-semibold text-zinc-800 sm:text-sm">{EVENT_INFO.title}</p>
+          <p className="truncate text-sm font-semibold text-zinc-800 sm:text-base">{EVENT_INFO.title}</p>
         </div>
       </header>
 
@@ -32,27 +32,27 @@ export default function LandingPage() {
         {/* ------------------------------------------------ hero */}
         <section className="relative overflow-hidden">
           <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-teal-50/70 via-white to-white" />
-          <div className="relative mx-auto w-full max-w-5xl px-4 pb-12 pt-12 text-center sm:px-6 sm:pb-16 sm:pt-20">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700">
+          <div className="relative mx-auto w-full max-w-5xl px-4 pb-14 pt-14 text-center sm:px-6 sm:pb-20 sm:pt-24">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700 sm:text-sm">
               {EVENT_INFO.subtitle}
             </p>
-            <h1 className="mx-auto mt-3 max-w-2xl text-3xl font-bold leading-tight tracking-tight text-zinc-900 sm:text-5xl sm:leading-[1.12]">
+            <h1 className="mx-auto mt-4 max-w-3xl text-4xl font-bold leading-[1.1] tracking-tight text-zinc-900 sm:text-5xl lg:text-6xl">
               {EVENT_INFO.title}
             </h1>
-            <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-zinc-500 sm:text-base">
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
               Organized by {EVENT_INFO.organizer}. Open the voting page on your phone, pick your favorite
               performance, and confirm — no app installation, no sign-up.
             </p>
-            <div className="mt-7 flex justify-center">
+            <div className="mt-8 flex justify-center">
               <LandingCta />
             </div>
-            <p className="mt-5 text-[11px] text-zinc-400">One vote per device · Voting is anonymous</p>
+            <p className="mt-6 text-xs text-zinc-500 sm:text-sm">One vote per device · Voting is anonymous</p>
           </div>
         </section>
 
         {/* ------------------------------------------------ event details */}
         <section aria-labelledby="event-details-heading" className="border-y border-zinc-100 bg-zinc-50/70">
-          <div className="mx-auto w-full max-w-5xl px-4 py-9 sm:px-6 sm:py-12">
+          <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
             <h2 id="event-details-heading" className="sr-only">
               Event details
             </h2>
@@ -78,14 +78,14 @@ export default function LandingPage() {
         </section>
 
         {/* ------------------------------------------------ how it works */}
-        <section aria-labelledby="how-it-works-heading" className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
+        <section aria-labelledby="how-it-works-heading" className="mx-auto w-full max-w-5xl px-4 py-14 sm:px-6 sm:py-20">
           <h2
             id="how-it-works-heading"
-            className="text-center text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl"
+            className="text-center text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl"
           >
             How voting works
           </h2>
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
             <Step
               number="1"
               title="Open the voting page"
@@ -107,9 +107,9 @@ export default function LandingPage() {
 
       {/* ------------------------------------------------ sticky footer */}
       <footer className="mt-auto border-t border-zinc-200 bg-white">
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-between gap-2 px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:flex-row sm:px-6">
-          <p className="text-xs text-zinc-500">© 2026 {EVENT_INFO.organizer}</p>
-          <p className="text-[11px] text-zinc-400">
+        <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-between gap-2 px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:flex-row sm:px-6">
+          <p className="text-sm text-zinc-600">© 2026 {EVENT_INFO.organizer}</p>
+          <p className="text-xs text-zinc-500 sm:text-sm">
             <Link href="/vote" className="font-medium text-teal-700 hover:text-teal-800">
               Vote now
             </Link>
@@ -133,13 +133,13 @@ function Detail({
   className?: string
 }) {
   return (
-    <div className={cn('flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm', className)}>
-      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700 ring-1 ring-teal-600/15">
+    <div className={cn('flex items-start gap-3.5 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm', className)}>
+      <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-700 ring-1 ring-teal-600/15">
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">{label}</p>
-        <p className="mt-0.5 text-sm font-medium leading-snug text-zinc-900">{value}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</p>
+        <p className="mt-1 text-base font-medium leading-snug text-zinc-900">{value}</p>
       </div>
     </div>
   )
@@ -147,14 +147,14 @@ function Detail({
 
 function Step({ number, title, description }: { number: string; title: string; description: string }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
       <div className="flex items-center gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-50 text-sm font-bold text-teal-700 ring-1 ring-teal-600/20">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-50 text-base font-bold text-teal-700 ring-1 ring-teal-600/20">
           {number}
         </span>
-        <h3 className="text-sm font-semibold text-zinc-900">{title}</h3>
+        <h3 className="text-base font-semibold text-zinc-900">{title}</h3>
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-zinc-500">{description}</p>
+      <p className="mt-3.5 text-base leading-relaxed text-zinc-600">{description}</p>
     </div>
   )
 }

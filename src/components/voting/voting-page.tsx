@@ -230,13 +230,13 @@ export function VotingPage() {
             {/* Kept for accessibility — the visual title lives on the landing page. */}
             <h1 className="sr-only">Audience voting — Nepal Grand Tihar Festival 2026</h1>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-sm">
                 Official audience voting
               </p>
               <StatusBadge status={status?.status ?? null} />
             </div>
 
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-teal-600/15 bg-teal-50/60 px-3.5 py-3 text-xs text-teal-900 sm:text-sm">
+            <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-teal-600/15 bg-teal-50/60 px-4 py-3.5 text-sm text-teal-900 sm:text-base">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" aria-hidden />
               <span>
                 Select <strong>one</strong> performance and confirm. Each device can vote <strong>once</strong> — the choice is
@@ -272,22 +272,22 @@ export function VotingPage() {
                   <span className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-50 ring-1 ring-teal-600/20">
                     <CheckCircle2 className="h-9 w-9 text-teal-600" aria-hidden />
                   </span>
-                  <h2 className="mt-5 text-xl font-bold text-zinc-900">Your vote has been recorded</h2>
-                  <p className="mt-2 text-sm text-zinc-500">
+                  <h2 className="mt-5 text-2xl font-bold text-zinc-900">Your vote has been recorded</h2>
+                  <p className="mt-2.5 text-base text-zinc-600">
                     Thank you for participating in the Nepal Grand Tihar Festival 2026.
                   </p>
-                  <div className="mt-5 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">You voted for</p>
-                    <p className="mt-0.5 font-semibold text-zinc-900">{voteState.participantName}</p>
+                  <div className="mt-6 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3.5">
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">You voted for</p>
+                    <p className="mt-1 text-lg font-semibold text-zinc-900">{voteState.participantName}</p>
                     {voteState.votedAt ? (
-                      <p className="mt-1 text-xs text-zinc-400">Recorded {formatVotedAt(voteState.votedAt)}</p>
+                      <p className="mt-1.5 text-sm text-zinc-500">Recorded {formatVotedAt(voteState.votedAt)}</p>
                     ) : null}
                   </div>
-                  <p className="mt-4 text-xs leading-relaxed text-zinc-500">
+                  <p className="mt-5 text-sm leading-relaxed text-zinc-600">
                     This device has used its single vote. It is no longer possible to vote again or change the choice
                     from this device.
                   </p>
-                  <Button variant="ghost" className="mt-5 text-teal-700 hover:text-teal-800" onClick={() => setShowVotedScreen(false)}>
+                  <Button variant="ghost" className="mt-6 text-base text-teal-700 hover:text-teal-800" onClick={() => setShowVotedScreen(false)}>
                     Browse participants
                   </Button>
                 </section>
@@ -295,14 +295,14 @@ export function VotingPage() {
                 <>
                   {/* ------------------------------------- status banners */}
                   {status?.status === 'PAUSED' && (
-                    <div className="mb-4 flex items-center gap-2.5 rounded-lg border border-amber-600/20 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+                    <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-amber-600/20 bg-amber-50 px-4 py-3.5 text-sm text-amber-800 sm:text-base">
+                      <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
                       Voting is temporarily paused. Please check back soon — the organizer will resume it shortly.
                     </div>
                   )}
                   {status?.status === 'CLOSED' && (
-                    <div className="mb-4 flex items-center gap-2.5 rounded-lg border border-zinc-300 bg-zinc-100 px-4 py-3 text-sm text-zinc-600">
-                      <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
+                    <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-zinc-300 bg-zinc-100 px-4 py-3.5 text-sm text-zinc-700 sm:text-base">
+                      <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
                       {status.closedPermanently
                         ? 'Voting has ended. Thank you to everyone who participated!'
                         : 'Voting is not open yet. It will open when the organizer starts it.'}
@@ -318,7 +318,7 @@ export function VotingPage() {
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="Search participant, group, university…"
                         aria-label="Search participants"
-                        className="h-10 rounded-lg border-zinc-200 bg-white pl-9 text-sm"
+                        className="h-11 rounded-lg border-zinc-200 bg-white pl-9 text-base"
                       />
                     </div>
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -335,11 +335,11 @@ export function VotingPage() {
 
                   {/* ------------------------------------- participant grid */}
                   {filtered.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-10 text-center text-sm text-zinc-500">
+                    <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-10 text-center text-base text-zinc-500">
                       No participants match your search.
                     </p>
                   ) : (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
                       {filtered.map((p) => (
                         <ParticipantCard
                           key={p.id}
@@ -356,7 +356,7 @@ export function VotingPage() {
 
               {!votedScreen && (
                 <div className="mt-6 flex justify-center">
-                  <Button variant="ghost" size="sm" onClick={() => void handleManualRefresh()} disabled={refreshing} className="gap-2 text-xs text-zinc-400 hover:text-zinc-600">
+                  <Button variant="ghost" size="sm" onClick={() => void handleManualRefresh()} disabled={refreshing} className="gap-2 text-sm text-zinc-500 hover:text-zinc-700">
                     <RotateCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} aria-hidden />
                     Refresh list
                   </Button>
@@ -370,10 +370,10 @@ export function VotingPage() {
       {/* ------------------------------------------------ sticky footer */}
       <footer className="mt-auto border-t border-zinc-200 bg-white">
         <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-between gap-1.5 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center sm:flex-row sm:text-left">
-          <Link href="/" className="text-xs font-medium text-teal-700 hover:text-teal-800">
+          <Link href="/" className="text-sm font-medium text-teal-700 hover:text-teal-800">
             ← Event home
           </Link>
-          <p className="text-[11px] text-zinc-400">Voting is anonymous · One vote per device</p>
+          <p className="text-xs text-zinc-500 sm:text-sm">Voting is anonymous · One vote per device</p>
         </div>
       </footer>
 
@@ -385,16 +385,16 @@ export function VotingPage() {
             <AlertDialogDescription asChild>
               <div>
                 <span>You are about to vote for:</span>
-                <span className="mt-2 block rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm">
-                  <span className="block font-semibold text-zinc-900">{confirming?.name}</span>
+                <span className="mt-2 block rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-3 text-sm">
+                  <span className="block text-base font-semibold text-zinc-900">{confirming?.name}</span>
                   {confirming?.performance ? (
-                    <span className="block text-xs text-zinc-500">{confirming.performance}</span>
+                    <span className="mt-0.5 block text-sm text-zinc-500">{confirming.performance}</span>
                   ) : null}
                   {confirming?.affiliation ? (
-                    <span className="block text-xs text-zinc-500">{confirming.affiliation}</span>
+                    <span className="block text-sm text-zinc-500">{confirming.affiliation}</span>
                   ) : null}
                 </span>
-                <span className="mt-3 block font-medium text-amber-700">
+                <span className="mt-3 block text-sm font-medium text-amber-700">
                   Each device can vote only once. This choice is final and cannot be changed.
                 </span>
               </div>
@@ -426,7 +426,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'shrink-0 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors',
+        'shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition-colors',
         active
           ? 'border-teal-600 bg-teal-600 text-white'
           : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50'
