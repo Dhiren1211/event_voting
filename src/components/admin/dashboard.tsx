@@ -80,6 +80,19 @@ export function Dashboard({ username, onLogout }: { username: string; onLogout: 
     }
   }
 
+  // Sign out: end the session on the server (deletes it and clears the
+  // cookie), then let the page re-check — it will show the login form.
+  const [signingOut, setSigningOut] = useState(false)
+  async function signOut() {
+    setSigningOut(true)
+    try {
+      await fetch('/api/admin/logout', { method: 'POST', cache: 'no-store' })
+    } catch {
+      /* even if the request fails, fall through to the session re-check */
+    }
+    onLogout()
+  }
+
   async function setStrictOneVotePerIp(enabled: boolean) {
     setSavingStrict(true)
     try {
@@ -138,7 +151,7 @@ export function Dashboard({ username, onLogout }: { username: string; onLogout: 
               {connected ? `Synced ${fmtTime(lastSync?.toISOString() ?? null)}` : 'Connection lost — retrying…'}
             </span>
             <span className="hidden font-medium text-heading md:inline">{username}</span>
-            <Button variant="outline" size="sm" className="h-9 rounded-full border-[1.5px] border-brand bg-white px-5 text-[13px] font-semibold text-brand-deep hover:bg-brand-soft hover:text-brand-deep" onClick={onLogout}>
+            <Button variant="outline" size="sm" className="h-9 rounded-full border-[1.5px] border-brand bg-white px-5 text-[13px] font-semibold text-brand-deep hover:bg-brand-soft hover:text-brand-deep" onClick={() => void signOut()} disabled={signingOut}>
               Sign out
             </Button>
           </div>
