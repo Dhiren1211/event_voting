@@ -77,8 +77,9 @@ export const ParticipantCard = memo(function ParticipantCard({
           'group flex h-full w-full flex-col rounded-[4px] border-[1.5px] bg-white p-2 text-center transition-colors',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-default',
           isMyVote ? 'border-brand' : 'border-canvas-line',
-          canVote && 'hover:border-brand active:bg-brand-soft',
-          (buttonState === 'paused' || buttonState === 'closed') && 'opacity-60'
+          // Photos always stay at full clarity; the round banner above the grid
+          // already explains when voting is paused or closed.
+          canVote && 'hover:border-brand active:bg-brand-soft'
         )}
       >
         <div className="relative">

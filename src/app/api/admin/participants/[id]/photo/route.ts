@@ -19,7 +19,8 @@ type Params = { params: Promise<{ id: string }> }
 /**
  * Upload / replace a participant photograph.
  * - Validates MIME type (JPG/JPEG/PNG/WebP) and size (<= MAX_UPLOAD_MB).
- * - Optimizes with sharp: auto-rotate, max 720x720, WebP ~78 quality (~50 KB: 1,000 phones on venue Wi-Fi).
+ * - Optimizes with sharp: auto-rotate, max 1080x1080, WebP q86 (~100 KB; sharp on 3x phone screens,
+ *   and the CDN serves repeat loads so the crowd does not hit the server).
  * - Stored in the database (MediaFile) so it works on serverless hosts like
  *   Vercel (read-only filesystem); served via /api/media/participants/<name>.
  * - Never AI-generated imagery — actual participant photos uploaded by admins.
@@ -64,8 +65,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     const input = Buffer.from(await file.arrayBuffer())
     output = await sharp(input)
       .rotate() // respect EXIF orientation
-      .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 78 })
+      .resize(1080, 1080, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 86, smartSubsample: true })
       .toBuffer()
   } catch (err) {
     console.error('sharp processing failed:', err)
