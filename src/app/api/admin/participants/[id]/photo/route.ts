@@ -20,7 +20,8 @@ type Params = { params: Promise<{ id: string }> }
  * Upload / replace a participant photograph.
  * - Validates MIME type (JPG/JPEG/PNG/WebP) and size (<= MAX_UPLOAD_MB).
  * - Optimizes with sharp: auto-rotate, max 720x720, WebP ~78 quality (~50 KB: 1,000 phones on venue Wi-Fi).
- * - Stored on disk under UPLOAD_DIR/participants, served via /api/media/...
+ * - Stored in the database (MediaFile) so it works on serverless hosts like
+ *   Vercel (read-only filesystem); served via /api/media/participants/<name>.
  * - Never AI-generated imagery — actual participant photos uploaded by admins.
  */
 export async function POST(req: NextRequest, { params }: Params) {
@@ -71,21 +72,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     return jsonError('IMAGE_PROCESSING_FAILED', 422, { message: 'The file does not look like a valid image.' })
   }
 
-  const { mkdir, writeFile, unlink } = await import('fs/promises')
-  const { join } = await import('path')
-  const dir = join(env.uploadDir, 'participants')
-  await mkdir(dir, { recursive: true })
-
   const filename = `p${id}-${Date.now()}.webp`
-  await writeFile(join(dir, filename), output)
+  await db.mediaFile.create({ data: { name: filename, contentType: 'image/webp', data: new Uint8Array(output) } })
 
-  // Remove the previous photo file, if it was served from local media storage.
-  if (participant.photoUrl?.startsWith('/api/media/')) {
-    const oldName = participant.photoUrl.split('/').pop() ?? ''
-    if (/^[a-zA-Z0-9._-]+$/.test(oldName)) {
-      await unlink(join(dir, oldName)).catch(() => {})
-    }
-  }
+  // Remove the previous photo (database copy, and a legacy on-disk file if any).
+  await removeStoredPhoto(participant.photoUrl)
 
   const photoUrl = `/api/media/participants/${filename}`
   const updated = await db.participant.update({ where: { id }, data: { photoUrl } })
@@ -107,17 +98,25 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const participant = await db.participant.findUnique({ where: { id } })
   if (!participant) return jsonError('PARTICIPANT_NOT_FOUND', 404)
 
-  if (participant.photoUrl?.startsWith('/api/media/')) {
-    const { unlink } = await import('fs/promises')
-    const { join } = await import('path')
-    const filename = participant.photoUrl.split('/').pop() ?? ''
-    if (/^[a-zA-Z0-9._-]+$/.test(filename)) {
-      await unlink(join(env.uploadDir, 'participants', filename)).catch(() => {})
-    }
-  }
+  await removeStoredPhoto(participant.photoUrl)
 
   const updated = await db.participant.update({ where: { id }, data: { photoUrl: null } })
   invalidatePublicCaches()
   await audit('PHOTO_DELETE', admin.username, { id }, getClientIp(req))
   return jsonOk({ participant: updated })
+}
+
+/** Delete a previously uploaded photo: its database copy and any legacy local file. */
+async function removeStoredPhoto(photoUrl: string | null): Promise<void> {
+  if (!photoUrl?.startsWith('/api/media/participants/')) return
+  const name = photoUrl.split('/').pop() ?? ''
+  if (!/^[a-zA-Z0-9._-]+$/.test(name)) return
+  await db.mediaFile.deleteMany({ where: { name } }).catch(() => {})
+  try {
+    const { unlink } = await import('fs/promises')
+    const { join } = await import('path')
+    await unlink(join(env.uploadDir, 'participants', name))
+  } catch {
+    /* no local file (normal on serverless hosts) */
+  }
 }

@@ -16,6 +16,31 @@ import { ArrowDown, ArrowUp, Camera, FileWarning, Loader2, Pencil, Plus, Search,
 import { adminFetch, ApiError, type AdminParticipant } from './admin-api'
 import { CATEGORY_LABELS } from '@/lib/types'
 
+/**
+ * Downscale big photos in the browser before upload. Hosting platforms cap
+ * request bodies (Vercel: 4.5 MB) and phone photos are often larger; the
+ * server re-encodes to a 720 px WebP anyway, so 1600 px loses nothing.
+ * Falls back to the original file if the browser cannot decode it.
+ */
+async function shrinkForUpload(file: File): Promise<File> {
+  const MAX_SIDE = 1600
+  if (file.size <= 1.5 * 1024 * 1024) return file
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bitmap.width * scale)
+    canvas.height = Math.round(bitmap.height * scale)
+    canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close()
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+    if (!blob) return file
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
+  } catch {
+    return file
+  }
+}
+
 const CATEGORIES = ['SINGING', 'DANCE', 'RAP', 'BEATBOXING', 'INSTRUMENTAL', 'CULTURAL'] as const
 
 type Draft = {
@@ -328,7 +353,7 @@ function ParticipantDialog({
     setPhotoBusy(true)
     try {
       const form = new FormData()
-      form.append('file', pendingFile)
+      form.append('file', await shrinkForUpload(pendingFile))
       await adminFetch(`/api/admin/participants/${participant.id}/photo`, { method: 'POST', body: form })
       toast.success('Photo uploaded.')
       pickFile(null)

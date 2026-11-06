@@ -123,3 +123,17 @@ model AuditLog {
 
   @@index([createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// Uploaded media (participant photos), stored in the database so uploads work
+// on serverless hosts (Vercel) where the filesystem is read-only/ephemeral.
+// Photos are re-encoded to ~50 KB WebP before storage; served by /api/media
+// with immutable CDN caching (each upload gets a new unique name).
+// ---------------------------------------------------------------------------
+
+model MediaFile {
+  name        String   @id // e.g. "p12-1730900000000.webp" (URL: /api/media/participants/<name>)
+  contentType String
+  data        Bytes
+  createdAt   DateTime @default(now())
+}
