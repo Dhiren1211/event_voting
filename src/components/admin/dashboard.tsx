@@ -83,6 +83,7 @@ export function Dashboard({ username, onLogout }: { username: string; onLogout: 
   // Sign out: end the session on the server (deletes it and clears the
   // cookie), then let the page re-check — it will show the login form.
   const [signingOut, setSigningOut] = useState(false)
+  const [confirmSignOut, setConfirmSignOut] = useState(false)
   async function signOut() {
     setSigningOut(true)
     try {
@@ -151,7 +152,7 @@ export function Dashboard({ username, onLogout }: { username: string; onLogout: 
               {connected ? `Synced ${fmtTime(lastSync?.toISOString() ?? null)}` : 'Connection lost — retrying…'}
             </span>
             <span className="hidden font-medium text-heading md:inline">{username}</span>
-            <Button variant="outline" size="sm" className="h-9 rounded-full border-[1.5px] border-brand bg-white px-5 text-[13px] font-semibold text-brand-deep hover:bg-brand-soft hover:text-brand-deep" onClick={() => void signOut()} disabled={signingOut}>
+            <Button variant="outline" size="sm" className="h-9 rounded-full border-[1.5px] border-brand bg-white px-5 text-[13px] font-semibold text-brand-deep hover:bg-brand-soft hover:text-brand-deep" onClick={() => setConfirmSignOut(true)} disabled={signingOut}>
               Sign out
             </Button>
           </div>
@@ -327,6 +328,33 @@ export function Dashboard({ username, onLogout }: { username: string; onLogout: 
           </TabsContent>
         </Tabs>
       </main>
+
+      <AlertDialog open={confirmSignOut} onOpenChange={(open) => !signingOut && setConfirmSignOut(open)}>
+        <AlertDialogContent className="max-w-sm rounded-md">
+          <AlertDialogHeader className="text-left">
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will need the admin password to sign back in. Voting is not affected — it keeps running
+              {status === 'OPEN' ? ' and the current round will still pause automatically' : ''}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={signingOut} className="rounded-full">
+              Stay signed in
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={signingOut}
+              className="rounded-full bg-brand text-white hover:bg-[#00b0d8]"
+              onClick={(e) => {
+                e.preventDefault()
+                void signOut()
+              }}
+            >
+              {signingOut ? 'Signing out…' : 'Sign out'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
         <AlertDialogContent className="max-w-sm rounded-xl">
