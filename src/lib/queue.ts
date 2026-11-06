@@ -105,21 +105,29 @@ async function runAdmissionCycle(): Promise<void> {
       select: { id: true, tokenHash: true },
     })
 
+    if (next.length === 0) return
+
     const expiresAt = new Date(Date.now() + passTtlMs)
     const nowIso = new Date()
-    for (const entry of next) {
-      await db.queueEntry
-        .update({
-          where: { id: entry.id },
-          data: {
-            status: 'ADMITTED',
-            admittedAt: nowIso,
-            passToken: randomBytes(24).toString('base64url'),
-            passExpiresAt: expiresAt,
-          },
-        })
-        .catch(() => {}) // device may have been purged concurrently — skip it
-    }
+    // One transaction for the whole batch: with large slot counts a burst can
+    // admit hundreds of devices at once, and one commit is far cheaper than
+    // hundreds of separate SQLite commits. updateMany (not update) so a device
+    // purged concurrently simply matches 0 rows instead of failing the batch.
+    await db
+      .$transaction(
+        next.map((entry) =>
+          db.queueEntry.updateMany({
+            where: { id: entry.id, status: 'WAITING' },
+            data: {
+              status: 'ADMITTED',
+              admittedAt: nowIso,
+              passToken: randomBytes(24).toString('base64url'),
+              passExpiresAt: expiresAt,
+            },
+          })
+        )
+      )
+      .catch((e) => console.error('queue admission batch failed', e))
   } finally {
     release()
   }

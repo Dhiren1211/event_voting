@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgres"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (pgbouncer) — used by the app at runtime
+  directUrl = env("DIRECT_URL") // direct (non-pooler) — used by prisma db push / migrate
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,7 @@ model Vote {
 
   @@index([participantId])
   @@index([createdAt])
+  @@index([ipHash]) // strict "one vote per network" lookups
 }
 
 // ---------------------------------------------------------------------------
@@ -83,8 +85,10 @@ model VotingConfig {
   id                Int       @id @default(1)
   status            String    @default("CLOSED") // OPEN | PAUSED | CLOSED
   closedPermanently Boolean   @default(false) // once closed, cannot be reopened
+  oneVotePerIp      Boolean   @default(false) // strict mode: reject a 2nd vote from the same IP (blocks other browsers); keep OFF on shared venue WiFi (NAT)
   openedAt          DateTime?
   closedAt          DateTime?
+  autoPauseAt       DateTime? // voting round timer: OPEN auto-flips to PAUSED at this moment (set on open/resume)
   updatedAt         DateTime  @updatedAt
 }
 

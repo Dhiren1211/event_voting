@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-10-31T18:52:46.137Z",
-  "finishedAt": "2026-10-31T18:53:05.733Z",
+  "startedAt": "2026-11-06T17:34:17.306Z",
+  "finishedAt": "2026-11-06T17:41:39.672Z",
   "config": {
     "baseUrl": "http://localhost:3000",
     "adminUsername": "admin",
     "adminPassword": "***redacted***",
     "voteTarget": 1000,
-    "voteRate": 100,
-    "readConcurrency": 500,
+    "voteRate": 4,
+    "readConcurrency": 200,
     "readRequestsPerUser": 3
   },
   "phases": [
@@ -16,19 +16,20 @@
       "pass": true,
       "label": "Phase 0 — warmup & health",
       "total": 21,
-      "success2xx": 21,
+      "success2xx": 16,
       "matched": 16,
       "networkErrors": 0,
       "statuses": {
-        "200": 21
+        "200": 16,
+        "403": 5
       },
-      "durationMs": 348.381166,
-      "rps": 60.27880393511284,
-      "meanMs": 15.76114414285715,
-      "p50Ms": 7.813030999999995,
-      "p95Ms": 28.988447000000008,
-      "p99Ms": 150.220028,
-      "maxMs": 150.220028
+      "durationMs": 6208.0599,
+      "rps": 3.3826993196376858,
+      "meanMs": 296.4318428571428,
+      "p50Ms": 25.264700000000175,
+      "p95Ms": 1295.7789999999998,
+      "p99Ms": 4354.5031,
+      "maxMs": 4354.5031
     },
     {
       "name": "1 admin setup",
@@ -41,71 +42,74 @@
       "statuses": {
         "200": 5
       },
-      "durationMs": 28.491194999999948,
-      "rps": 175.49281453445562,
-      "meanMs": 21.374628400000006,
-      "p50Ms": 8.091066999999953,
-      "p95Ms": 79.43916899999999,
-      "p99Ms": 79.43916899999999,
-      "maxMs": 79.43916899999999
+      "durationMs": 14347.3093,
+      "rps": 0.34849740083320013,
+      "meanMs": 3745.7946199999997,
+      "p50Ms": 4383.929899999999,
+      "p95Ms": 7076.358799999998,
+      "p99Ms": 7076.358799999998,
+      "maxMs": 7076.358799999998
     },
     {
       "name": "2 read load",
       "pass": true,
       "label": "Phase 2 — read load",
-      "total": 1500,
-      "success2xx": 1500,
-      "matched": 1500,
+      "total": 600,
+      "success2xx": 600,
+      "matched": 600,
       "networkErrors": 0,
       "statuses": {
-        "200": 1500
+        "200": 600
       },
-      "durationMs": 6066.905419,
-      "rps": 247.2430170581501,
-      "meanMs": 1818.7972458373317,
-      "p50Ms": 1969.66554,
-      "p95Ms": 2597.0040520000002,
-      "p99Ms": 2799.5896770000004,
-      "maxMs": 3107.473824
+      "durationMs": 16980.530499999997,
+      "rps": 35.33458510027117,
+      "meanMs": 3314.0155106666657,
+      "p50Ms": 2993.340000000004,
+      "p95Ms": 11260.6475,
+      "p99Ms": 13591.220800000003,
+      "maxMs": 13734.295000000002
     },
     {
       "name": "3 vote submission",
-      "pass": true,
+      "pass": false,
       "label": "Phase 3 — vote submission",
       "total": 1000,
-      "success2xx": 1000,
-      "matched": 1000,
+      "success2xx": 300,
+      "matched": 300,
       "networkErrors": 0,
       "statuses": {
-        "200": 1000
+        "200": 300,
+        "500": 378,
+        "ERR": 322
       },
-      "durationMs": 9320.389663999998,
-      "rps": 107.29165153496743,
-      "meanMs": 655.3084780649991,
-      "p50Ms": 624.1628309999996,
-      "p95Ms": 953.7395770000003,
-      "p99Ms": 969.9909950000001,
-      "maxMs": 973.1583819999996,
-      "votesAccepted": 1000
+      "durationMs": 268772.9617,
+      "rps": 3.720612347592403,
+      "meanMs": 21344.517858599997,
+      "p50Ms": 21229.856100000034,
+      "p95Ms": 30011.746799999994,
+      "p99Ms": 30015.2773,
+      "maxMs": 30020.9393,
+      "votesAccepted": 300
     },
     {
       "name": "4 duplicate rejection",
-      "pass": true,
+      "pass": false,
       "label": "Phase 4 — duplicate rejection",
       "total": 200,
       "success2xx": 0,
-      "matched": 200,
+      "matched": 149,
       "networkErrors": 0,
       "statuses": {
-        "409": 200
+        "409": 149,
+        "ERR": 51
       },
-      "durationMs": 854.7504939999999,
-      "rps": 233.9864105419283,
-      "meanMs": 555.2124912,
-      "p50Ms": 544.7377859999979,
-      "p95Ms": 678.8550359999972,
-      "p99Ms": 690.8838660000001,
-      "maxMs": 693.7414790000003
+      "durationMs": 42619.75190000003,
+      "rps": 4.692659883831934,
+      "meanMs": 22993.681252000002,
+      "p50Ms": 22925.568700000003,
+      "p95Ms": 30012.93709999998,
+      "p99Ms": 30015.699399999983,
+      "maxMs": 30015.847699999984
     },
     {
       "name": "5 same-device race",
@@ -120,13 +124,13 @@
         "409": 20,
         "429": 75
       },
-      "durationMs": 411.47761399999945,
-      "rps": 243.0265866176626,
-      "meanMs": 68.7197623799998,
-      "p50Ms": 66.30100200000015,
-      "p95Ms": 112.51445999999851,
-      "p99Ms": 119.18141699999978,
-      "maxMs": 120.43449200000032,
+      "durationMs": 15436.400400000042,
+      "rps": 6.478194229789461,
+      "meanMs": 1458.879352999999,
+      "p50Ms": 307.36820000002626,
+      "p95Ms": 4683.463300000003,
+      "p99Ms": 12475.993900000001,
+      "maxMs": 13269.883900000015,
       "tokensWithExactlyOne": 5
     },
     {
@@ -141,13 +145,13 @@
         "200": 2,
         "403": 100
       },
-      "durationMs": 693.7297729999991,
-      "rps": 147.03131387731304,
-      "meanMs": 510.1589570294116,
-      "p50Ms": 524.9180070000002,
-      "p95Ms": 664.4020969999983,
-      "p99Ms": 677.242973999997,
-      "maxMs": 680.3414470000025,
+      "durationMs": 14335.542499999981,
+      "rps": 7.115182421593054,
+      "meanMs": 2548.2864852941157,
+      "p50Ms": 1874.2072000000044,
+      "p95Ms": 6377.264900000009,
+      "p99Ms": 7015.877299999993,
+      "maxMs": 7302.471600000048,
       "pausedMatched": 100
     },
     {
@@ -162,18 +166,18 @@
         "200": 1,
         "403": 100
       },
-      "durationMs": 401.8294859999987,
-      "rps": 251.35039492846056,
-      "meanMs": 228.94755620792074,
-      "p50Ms": 247.63087399999858,
-      "p95Ms": 383.3880659999995,
-      "p99Ms": 394.5859509999973,
-      "maxMs": 397.45677400000204,
+      "durationMs": 11464.547299999977,
+      "rps": 8.809767830954844,
+      "meanMs": 5901.627194059405,
+      "p50Ms": 6104.453099999984,
+      "p95Ms": 10438.195499999973,
+      "p99Ms": 10645.861200000043,
+      "maxMs": 11453.718200000003,
       "closedMatched": 100
     },
     {
       "name": "8 durability verification",
-      "pass": true,
+      "pass": false,
       "label": "Phase 8 — durability verification",
       "total": 1,
       "success2xx": 1,
@@ -182,57 +186,57 @@
       "statuses": {
         "200": 1
       },
-      "durationMs": 0.00041899999996530823,
-      "rps": 2386634.8450663406,
-      "meanMs": 30.464601000003313,
-      "p50Ms": 30.464601000003313,
-      "p95Ms": 30.464601000003313,
-      "p99Ms": 30.464601000003313,
-      "maxMs": 30.464601000003313
+      "durationMs": 0.0005000000237487257,
+      "rps": 1999999.905005102,
+      "meanMs": 2762.8386000000173,
+      "p50Ms": 2762.8386000000173,
+      "p95Ms": 2762.8386000000173,
+      "p99Ms": 2762.8386000000173,
+      "maxMs": 2762.8386000000173
     }
   ],
   "observed": {
-    "participantCount": 29,
-    "phase3AcceptedVotes": 1000,
+    "participantCount": 15,
+    "phase3AcceptedVotes": 300,
     "raceSuccesses": 5,
     "raceRejects": 95,
     "raceAnomalies": 0,
-    "expectedTotalVotes": 1005,
-    "serverTotalVotes": 1005,
+    "expectedTotalVotes": 305,
+    "serverTotalVotes": 699,
     "top5Results": [
       {
-        "participantId": 3,
-        "name": "Dong & Band",
-        "votes": 36
-      },
-      {
-        "participantId": 5,
-        "name": "Himalayan Jam",
-        "votes": 36
+        "participantId": 9,
+        "name": "Sandesh Darnal & Basanti",
+        "votes": 52
       },
       {
         "participantId": 2,
         "name": "Samin Yakka",
-        "votes": 36
+        "votes": 51
       },
       {
-        "participantId": 1,
-        "name": "Shakti Man Tamang",
-        "votes": 36
+        "participantId": 7,
+        "name": "Pratikshya Rai",
+        "votes": 49
       },
       {
-        "participantId": 4,
-        "name": "Thapa Manjil",
-        "votes": 36
+        "participantId": 10,
+        "name": "Sandipa Bika",
+        "votes": 49
+      },
+      {
+        "participantId": 5,
+        "name": "Himalayan Jam",
+        "votes": 48
       }
     ]
   },
   "checks": {
-    "allPhase3VotesAccepted": true,
-    "allDuplicatesRejected409": true,
+    "allPhase3VotesAccepted": false,
+    "allDuplicatesRejected409": false,
     "raceExactlyOneSuccessPerToken": true,
     "pausedAndClosedAll403": true,
-    "durableTotalMatches": true
+    "durableTotalMatches": false
   },
-  "overallPass": true
+  "overallPass": false
 }

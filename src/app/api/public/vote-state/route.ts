@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
 import { db, ensureDb } from '@/lib/db'
-import { jsonError, jsonOk, readJson } from '@/lib/api'
+import { jsonError, jsonOk, readJson, getClientIp, hashIp } from '@/lib/api'
 import { isValidDeviceToken, sha256 } from '@/lib/device'
 import { rateLimit } from '@/lib/rate-limit'
+import { getVotingState } from '@/lib/voting'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,12 @@ export const dynamic = 'force-dynamic'
  * Check whether this device has already voted.
  * Returns only the device's own vote (identified by its own token) —
  * never any aggregate results.
+ *
+ * `ipVoted` is true only while the strict "one vote per network" mode is
+ * enabled and SOME device on this IP has already voted. It lets the ballot
+ * page explain the situation immediately instead of letting the visitor pick
+ * a participant and be rejected at submission time. It reveals nothing about
+ * WHO the network voted for.
  */
 export async function POST(req: NextRequest) {
   const body = await readJson(req)
@@ -19,14 +26,25 @@ export async function POST(req: NextRequest) {
   if (!rateLimit(`vstate:${sha256(token)}`, 30)) return jsonError('RATE_LIMITED', 429)
 
   await ensureDb()
-  const vote = await db.vote.findUnique({
-    where: { deviceTokenHash: sha256(token) },
-    select: { participant: { select: { name: true } }, createdAt: true },
-  })
+
+  const [vote, state] = await Promise.all([
+    db.vote.findUnique({
+      where: { deviceTokenHash: sha256(token) },
+      select: { participant: { select: { name: true } }, createdAt: true },
+    }),
+    getVotingState(),
+  ])
+
+  let ipVoted = false
+  if (!vote && state.oneVotePerIp) {
+    const ipHash = hashIp(getClientIp(req))
+    ipVoted = !!(await db.vote.findFirst({ where: { ipHash }, select: { id: true } }))
+  }
 
   return jsonOk({
     voted: !!vote,
     participantName: vote?.participant.name ?? null,
     votedAt: vote?.createdAt.toISOString() ?? null,
+    ipVoted,
   })
 }

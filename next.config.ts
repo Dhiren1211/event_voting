@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // The old lobby URL (already printed on QR codes) goes straight to the ballot.
+  async redirects() {
+    return [{ source: '/queue', destination: '/', permanent: false }]
+  },
 };
 
 export default nextConfig;

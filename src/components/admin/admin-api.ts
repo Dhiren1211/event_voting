@@ -23,8 +23,12 @@ export type AdminParticipant = {
 export type OverviewData = {
   status: 'OPEN' | 'PAUSED' | 'CLOSED'
   closedPermanently: boolean
+  oneVotePerIp: boolean
   openedAt: string | null
   closedAt: string | null
+  autoPauseAt: string | null
+  roundMinutes: number
+  serverNow?: string
   totalVotes: number
   participantCount: number
   activeParticipantCount: number
@@ -48,7 +52,7 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
-    public message?: string
+    message?: string
   ) {
     super(message ?? code)
   }

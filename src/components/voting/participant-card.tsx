@@ -1,11 +1,11 @@
 'use client'
 
 import { memo } from 'react'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Building2, CheckCircle2, Users } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { ParticipantPublic } from '@/lib/types'
-import { CATEGORY_LABELS } from '@/lib/types'
+import { cn } from '@/lib/utils'
+
+export type VoteButtonState = 'open' | 'closed' | 'paused' | 'voted'
 
 function initialsOf(name: string): string {
   return name
@@ -15,111 +15,103 @@ function initialsOf(name: string): string {
     .join('')
 }
 
-export type VoteButtonState = 'open' | 'closed' | 'paused' | 'voted'
-
-interface ParticipantCardProps {
-  participant: ParticipantPublic
-  buttonState: VoteButtonState
-  submitting: boolean
-  onVote: (p: ParticipantPublic) => void
+/** Participant photo, or a light initials tile until the admin uploads one. */
+export function ParticipantPhoto({
+  participant,
+  className,
+  eager = false,
+}: {
+  participant: Pick<ParticipantPublic, 'name' | 'photoUrl'> | undefined
+  className?: string
+  eager?: boolean
+}) {
+  return (
+    <div className={cn('overflow-hidden bg-canvas-high', className)}>
+      {participant?.photoUrl ? (
+        <img
+          src={participant.photoUrl}
+          alt={participant.name}
+          loading={eager ? 'eager' : 'lazy'}
+          decoding="async"
+          className="h-full w-full object-cover object-[50%_25%]"
+        />
+      ) : (
+        <span
+          aria-hidden
+          className="flex h-full w-full items-center justify-center text-[28px] font-semibold tracking-wide text-[#a9c3d1]"
+        >
+          {participant ? initialsOf(participant.name) : ''}
+        </span>
+      )}
+    </div>
+  )
 }
 
+/**
+ * Outlined ballot tile. The whole tile is the vote target (opens the
+ * confirmation). The device's own vote is shown as the "selected" tile.
+ */
 export const ParticipantCard = memo(function ParticipantCard({
   participant,
   buttonState,
   submitting,
   onVote,
-}: ParticipantCardProps) {
-  const canVote = buttonState === 'open'
+  isMyVote = false,
+}: {
+  participant: ParticipantPublic
+  buttonState: VoteButtonState
+  submitting: boolean
+  onVote: (p: ParticipantPublic) => void
+  isMyVote?: boolean
+}) {
+  const canVote = buttonState === 'open' && !submitting
 
   return (
-    <article className="group flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-zinc-100">
-        {participant.photoUrl ? (
-          <img
-            src={participant.photoUrl}
-            alt={`Photo of ${participant.name}`}
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          />
-        ) : (
-          <div
-            aria-label={`No photo available for ${participant.name}`}
-            className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-zinc-50 to-zinc-200/70"
-          >
-            <span
-              aria-hidden
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-xl font-semibold text-zinc-400 shadow-sm ring-1 ring-zinc-200"
-            >
-              {initialsOf(participant.name)}
-            </span>
-            <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Photo coming soon</span>
-          </div>
+    <li>
+      <button
+        type="button"
+        onClick={() => onVote(participant)}
+        disabled={!canVote}
+        aria-label={canVote ? `Vote for ${participant.name}` : participant.name}
+        className={cn(
+          'group flex h-full w-full flex-col rounded-[4px] border-[1.5px] bg-white p-2 text-center transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-default',
+          isMyVote ? 'border-brand' : 'border-canvas-line',
+          canVote && 'hover:border-brand active:bg-brand-soft',
+          (buttonState === 'paused' || buttonState === 'closed') && 'opacity-60'
         )}
-        {participant.classification ? (
-          <span className="absolute left-2.5 top-2.5">
-            <Badge
-              className={
-                participant.classification === 'GROUP'
-                  ? 'border-transparent bg-zinc-900/80 text-white backdrop-blur'
-                  : 'border-transparent bg-white/90 text-zinc-700 backdrop-blur'
-              }
-            >
-              {participant.classification === 'GROUP' ? 'Group' : 'Solo'}
-            </Badge>
-          </span>
-        ) : null}
-      </div>
-
-      <div className="flex flex-1 flex-col gap-3 p-5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {participant.category ? (
-            <Badge variant="secondary" className="bg-teal-50 text-teal-700 hover:bg-teal-50 border border-teal-600/10 font-medium">
-              {CATEGORY_LABELS[participant.category] ?? participant.category}
-            </Badge>
-          ) : null}
-          {participant.performance ? (
-            <span className="text-sm font-medium text-zinc-500">{participant.performance}</span>
-          ) : null}
-        </div>
-
-        <h3 className="text-lg font-semibold leading-snug text-zinc-900">{participant.name}</h3>
-
-        {participant.affiliation ? (
-          <p className="flex items-center gap-1.5 text-sm text-zinc-500">
-            <Building2 className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
-            {participant.affiliation}
-          </p>
-        ) : null}
-
-        {participant.members ? (
-          <p className="flex items-start gap-1.5 text-sm leading-relaxed text-zinc-500">
-            <Users className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
-            <span className="line-clamp-2" title={participant.members}>
-              {participant.members}
+      >
+        <div className="relative">
+          <ParticipantPhoto participant={participant} className="aspect-square w-full rounded-[2px]" />
+          {participant.classification === 'GROUP' ? (
+            <span className="absolute right-1.5 top-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-subtle">
+              Group
             </span>
-          </p>
-        ) : null}
-
-        <div className="mt-auto pt-2">
-          {buttonState === 'voted' ? (
-            <Button disabled className="h-11 w-full gap-1.5 bg-zinc-100 text-base text-zinc-500 hover:bg-zinc-100">
-              <CheckCircle2 className="h-4.5 w-4.5 text-teal-600" aria-hidden />
-              Vote recorded
-            </Button>
-          ) : (
-            <Button
-              onClick={() => onVote(participant)}
-              disabled={!canVote || submitting}
-              className="h-11 w-full text-base font-semibold"
-              aria-label={`Vote for ${participant.name}`}
-            >
-              {buttonState === 'paused' ? 'Voting is paused' : buttonState === 'closed' ? 'Voting closed' : 'Vote'}
-            </Button>
-          )}
+          ) : null}
+          {isMyVote ? (
+            <span className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full bg-brand ring-[3px] ring-white">
+              <Check className="h-4 w-4 text-white" strokeWidth={3} aria-hidden />
+            </span>
+          ) : null}
         </div>
-      </div>
-    </article>
+        <div className="flex flex-1 flex-col px-1 pb-1 pt-3">
+          <h3
+            className={cn(
+              'line-clamp-2 text-[14px] font-semibold leading-snug transition-colors',
+              isMyVote ? 'text-brand-deep' : 'text-heading',
+              canVote && 'group-hover:text-brand-deep'
+            )}
+          >
+            {participant.name}
+          </h3>
+          {participant.performance ? (
+            <p className="mt-0.5 truncate text-[12px] text-subtle">{participant.performance}</p>
+          ) : null}
+          {isMyVote ? (
+            <p className="mt-1.5 text-[12px] font-semibold uppercase tracking-wide text-brand-deep">Your vote</p>
+          ) : null}
+        </div>
+      </button>
+    </li>
   )
 })

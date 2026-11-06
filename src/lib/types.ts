@@ -12,12 +12,18 @@ export type ParticipantPublic = {
 export type VotingStatusInfo = {
   status: 'OPEN' | 'PAUSED' | 'CLOSED'
   closedPermanently: boolean
+  /** While OPEN: when the current voting round ends (auto-pause). */
+  autoPauseAt?: string | null
+  /** Server clock at response time — used to correct device clock skew. */
+  serverNow?: string
 }
 
 export type DeviceVoteState = {
   voted: boolean
   participantName: string | null
   votedAt: string | null
+  /** True only in strict "one vote per network" mode when this IP already voted. */
+  ipVoted: boolean
 }
 
 export type QueueClientState =

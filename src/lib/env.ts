@@ -11,21 +11,24 @@ export const env = {
 
   // rate limits — per minute
   votePerToken: int(process.env.VOTE_RATE_LIMIT_PER_TOKEN, 5),
-  votePerIp: int(process.env.VOTE_RATE_LIMIT_PER_IP, 6000),
-  devicePerIp: int(process.env.DEVICE_RATE_LIMIT_PER_IP, 3000),
-  publicReadPerIp: int(process.env.PUBLIC_READ_RATE_LIMIT_PER_IP, 6000),
+  votePerIp: int(process.env.VOTE_RATE_LIMIT_PER_IP, 20000),
+  devicePerIp: int(process.env.DEVICE_RATE_LIMIT_PER_IP, 20000),
+  publicReadPerIp: int(process.env.PUBLIC_READ_RATE_LIMIT_PER_IP, 60000),
   loginPerIp: int(process.env.LOGIN_RATE_LIMIT_PER_IP, 10),
 
   // voting queue (virtual waiting room)
   queueJoinPerToken: int(process.env.QUEUE_JOIN_RATE_LIMIT_PER_TOKEN, 10),
   queueStatePerToken: int(process.env.QUEUE_STATE_RATE_LIMIT_PER_TOKEN, 60),
-  queuePerIp: int(process.env.QUEUE_RATE_LIMIT_PER_IP, 6000),
-  queueActiveSlots: int(process.env.QUEUE_ACTIVE_SLOTS, 40),
-  queuePassTtlMin: int(process.env.QUEUE_PASS_TTL_MIN, 10),
+  queuePerIp: int(process.env.QUEUE_RATE_LIMIT_PER_IP, 60000),
+  queueActiveSlots: int(process.env.QUEUE_ACTIVE_SLOTS, 1000),
+  queuePassTtlMin: int(process.env.QUEUE_PASS_TTL_MIN, 5),
 
   // uploads
   uploadDir: process.env.UPLOAD_DIR || '/home/z/my-project/uploads',
-  maxUploadMb: int(process.env.MAX_UPLOAD_MB, 5),
+  maxUploadMb: int(process.env.MAX_UPLOAD_MB, 15),
+
+  // voting round timer (auto-pause after each open/resume)
+  votingRoundMinutes: int(process.env.VOTING_ROUND_MINUTES, 5),
 } as const
 
 export const SESSION_COOKIE = 'ngtf_admin_session'

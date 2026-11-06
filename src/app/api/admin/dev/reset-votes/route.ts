@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (full) {
     await db.votingConfig.upsert({
       where: { id: 1 },
-      update: { status: 'OPEN', closedPermanently: false, openedAt: new Date(), closedAt: null },
+      update: { status: 'OPEN', closedPermanently: false, openedAt: new Date(), closedAt: null, autoPauseAt: null },
       create: { id: 1, status: 'OPEN', closedPermanently: false, openedAt: new Date() },
     })
   }

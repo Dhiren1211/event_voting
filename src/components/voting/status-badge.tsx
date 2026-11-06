@@ -1,40 +1,59 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
 import type { VotingStatusInfo } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
-export function StatusBadge({ status }: { status: VotingStatusInfo['status'] | null }) {
-  if (!status) {
-    return (
-      <Badge variant="outline" className="gap-1.5 border-zinc-200 text-zinc-500">
-        <span className="h-1.5 w-1.5 rounded-full bg-zinc-300 animate-pulse" />
-        Checking…
-      </Badge>
-    )
-  }
-  if (status === 'OPEN') {
-    return (
-      <Badge className="gap-1.5 border-transparent bg-teal-50 text-teal-700 hover:bg-teal-50 ring-1 ring-inset ring-teal-600/20">
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-500 opacity-60" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-teal-600" />
-        </span>
-        Voting is open
-      </Badge>
-    )
-  }
-  if (status === 'PAUSED') {
-    return (
-      <Badge className="gap-1.5 border-transparent bg-amber-50 text-amber-700 hover:bg-amber-50 ring-1 ring-inset ring-amber-600/20">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-        Voting paused
-      </Badge>
-    )
-  }
+type Status = VotingStatusInfo['status'] | null
+
+const LABEL: Record<NonNullable<Status> | 'LOADING', string> = {
+  OPEN: 'Voting open',
+  PAUSED: 'Paused',
+  CLOSED: 'Voting closed',
+  LOADING: 'Checking…',
+}
+
+/** Outlined live-status pill. Cyan is used only when voting is open. */
+export function StatusBadge({ status, className }: { status: Status; className?: string }) {
+  const key = status ?? 'LOADING'
   return (
-    <Badge variant="outline" className="gap-1.5 border-zinc-200 bg-zinc-50 text-zinc-600">
-      <span className="h-1.5 w-1.5 rounded-full bg-zinc-400" />
-      Voting closed
-    </Badge>
+    <span
+      role="status"
+      className={cn(
+        'inline-flex h-10 shrink-0 items-center gap-2 rounded-full border-[1.5px] bg-white px-4 text-[13px] font-semibold sm:px-5',
+        key === 'OPEN' && 'border-brand text-brand-deep',
+        key === 'PAUSED' && 'border-canvas-line text-heading',
+        (key === 'CLOSED' || key === 'LOADING') && 'border-canvas-line text-subtle',
+        className
+      )}
+    >
+      <span aria-hidden className="relative flex h-2 w-2">
+        {key === 'OPEN' ? (
+          <span className="absolute inset-0 animate-ping rounded-full bg-brand opacity-60 motion-reduce:hidden" />
+        ) : null}
+        <span
+          className={cn(
+            'relative h-2 w-2 rounded-full',
+            key === 'OPEN' && 'bg-brand',
+            key === 'PAUSED' && 'bg-subtle',
+            key === 'CLOSED' && 'bg-canvas-line',
+            key === 'LOADING' && 'animate-pulse bg-canvas-line'
+          )}
+        />
+      </span>
+      {LABEL[key]}
+    </span>
+  )
+}
+
+/** Thin bar across the top of every public page: cyan while voting is open. */
+export function StatusBar({ status }: { status: Status }) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        'relative h-1 w-full transition-colors duration-700 motion-reduce:transition-none',
+        status === 'OPEN' ? 'bg-brand' : 'bg-transparent'
+      )}
+    />
   )
 }

@@ -37,6 +37,16 @@ export async function ensureAdmin(): Promise<void> {
     await db.admin.create({
       data: { username: env.adminUsername, passwordHash: hashPassword(env.adminPassword) },
     })
+    return
+  }
+  // .env is the source of truth: rotating ADMIN_PASSWORD takes effect on the
+  // next login (previously the old hash stayed in the DB forever), and every
+  // existing session is revoked so anyone holding the old password is logged out.
+  if (!verifyPassword(env.adminPassword, existing.passwordHash)) {
+    await db.$transaction([
+      db.admin.update({ where: { id: existing.id }, data: { passwordHash: hashPassword(env.adminPassword) } }),
+      db.adminSession.deleteMany({ where: { adminId: existing.id } }),
+    ])
   }
 }
 

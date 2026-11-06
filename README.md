@@ -77,8 +77,8 @@ Notes:
 
 ## 5. How voting works
 
-1. Visitor scans the QR code → lands on the **voting lobby (`/queue`)** → the app generates a **cryptographically secure device token** (256-bit, `crypto.randomBytes`) and stores it in `localStorage`.
-2. While voting is **OPEN**, the visitor taps **“Vote now”** and takes a place in the **admission queue** (see below). When slots are free — the common case at moderate traffic — admission is instant and the visitor never notices the queue. When a crowd taps at once, the lobby shows a live position (e.g. “#12 in line, about 2 min”) and the voting page opens **automatically** when it is the device's turn.
+1. Visitor scans the QR code → lands directly on the **ballot (`/`)**. The participant list and voting status are rendered into the first HTML response (served from a 5 s in-memory cache), so the photos and Vote buttons appear immediately — there is no lobby or waiting line. Old QR codes that point to `/queue?auto=1` are redirected to `/` by the server.
+2. The browser creates a **256-bit device token** with the Web Crypto API and keeps it in `localStorage` (no extra network round trip).
 3. The visitor picks **one** participant on `/vote`, confirms in a dialog, and the app POSTs to `/api/public/vote` with `{ participantId, token }`.
 4. The server:
    - rate-limits per token (5/min) and per IP (generous — venue NAT);
@@ -90,16 +90,11 @@ Notes:
    - returns success **only after the row is durably committed**.
 5. The device can never vote again — enforced by the database, independent of the frontend.
 
-### Admission queue (waiting room)
+### Speed (measured)
 
-The queue exists to absorb the exact moment hundreds of audience members tap “Vote now” simultaneously (typically right after the host announces voting):
-
-- **FIFO admission in batches** — at most `QUEUE_ACTIVE_SLOTS` devices (default 40) hold a valid pass at any moment; everyone else waits in line on the lobby page with a live position and ETA.
-- **Short-lived passes** — each admitted device gets a pass valid for `QUEUE_PASS_TTL_MIN` minutes (default 10). Expired passes are purged automatically, freeing slots; a device that lets its pass lapse goes to the back of the line.
-- **Slot release on vote** — voting succeeds → slot freed instantly → the line keeps moving at roughly `QUEUE_ACTIVE_SLOTS × 80` votes/hour minimum, far above the realistic per-minute pace of one human picking one act.
-- **Pause keeps spots** — if the organizer pauses voting, the line is frozen and every device keeps its place (“Your spot is saved — no need to rejoin”). Resume continues admissions. **Open** (fresh start) and **Close** (permanent) clear the queue so no stale devices are admitted first.
-- **Server-authoritative** — positions, passes, and admission all live in the database (`QueueEntry`); the client cannot skip the line by tampering with page state. The lobby polls `/api/public/queue/state` every 4–8 s (adaptive, slower when far back).
-- **Scope (disclosed)** — the queue gates *page admission* (the burst vector). The vote API itself is protected by rate limits + the one-vote-per-device DB constraint as before; a scripted client bypassing the UI is throttled by those layers, not by the queue.
+- Throttled phone connection (150 ms latency, ~1.6 Mbps): a performer can be tapped **about 2.0 s after scanning** (was 4.5 s with an empty queue, and minutes when crowded).
+- 1,000 phones on one Wi-Fi IP arriving within 30 s: **1,000/1,000 votes recorded, 0 errors**, page delivered in under 0.3 s at the peak.
+- The old admission-queue code (`src/lib/queue.ts`, `/api/public/queue/*`) is no longer used by the public pages and can be removed after the event.
 
 **Honest limitation:** device tokens are not verified human identity. If a visitor clears browser storage or opens a different browser, they can obtain a new token. This is inherent to QR-based anonymous audience voting without personal identification; the token mechanism raises the bar (no accidental double-votes, no casual duplicates) but cannot stop a determined actor with unlimited browsers. Results privacy does not depend on this: vote counts are never exposed publicly.
 
@@ -162,8 +157,24 @@ Infrastructure caveats (disclosed):
 3. Build & start: `npm run build && npm start` (or any Next.js-compatible host; the app uses no serverless-incompatible features, but SQLite requires a **persistent filesystem** — not read-only/ephemeral serverless).
 4. Uploads: set `UPLOAD_DIR` to a persistent directory. (For multi-instance deployments, replace SQLite with Postgres and local uploads with object storage — S3/R2 — as noted in §7.)
 5. Open `/admin`, sign in, **open voting**, then open the **QR Code** tab, set the public URL to the deployed domain (defaults to `/queue?auto=1`, the voting lobby), and print the QR code.
-6. Queue tuning: raise `QUEUE_ACTIVE_SLOTS` if your host handled the load test comfortably (e.g. 80–120 on a fast disk); keep `QUEUE_PASS_TTL_MIN` at ~10 min so abandoned slots recycle quickly.
+6. Queue tuning: keep `QUEUE_ACTIVE_SLOTS` at or above the expected audience size (default 1000). Keep the per-IP limits high: on venue Wi-Fi, and on Korean mobile networks (carrier-grade NAT), hundreds of phones share one IP.
 7. After the event: pause/close voting, export CSVs (results + raw votes) from the dashboard.
+
+## 9a. Event-day runbook
+
+**Before the event**
+- Deploy the final build **once**, then do everything else (photo uploads, participant edits, password) in the **production** admin, not the preview. The build script copies the preview database into the package, and uploaded photos live outside it.
+- Confirm the host runs **exactly one** always-on instance with a writable, persistent disk. SQLite, the in-memory rate limiter and the queue lock all assume a single process; several instances would each keep their own copy of the votes.
+- Rotate `ADMIN_PASSWORD` in `.env` and redeploy. It now takes effect on the next login and signs out every old session.
+- From a phone on mobile data (not office Wi-Fi), scan the printed QR code and run through one vote. Then **Reset votes** in the admin panel.
+- Keep "one vote per network" **OFF**. At the venue it would block everyone after the first person on the Wi-Fi.
+
+**During voting**
+- **Do not redeploy** while voting is open: a redeploy replaces the database with the preview copy and the votes are lost.
+- Keep the admin Overview open; votes/minute should climb right after the announcement.
+
+**After voting**
+- Close voting, then export **both** CSVs (results + raw votes) immediately, before anything else is touched.
 
 ## 10. Testing checklist (verified in-browser + API)
 

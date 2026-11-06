@@ -132,24 +132,24 @@ export function ParticipantsPanel({ onChanged }: { onChanged: () => void }) {
       <CardContent className="p-4 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center gap-2.5">
           <div className="relative min-w-52 flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" aria-hidden />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search participants…" aria-label="Search participants" className="h-9 pl-9" />
           </div>
-          <Button onClick={() => setAdding(true)} size="sm" className="h-9 gap-1.5 bg-teal-600 font-semibold hover:bg-teal-700">
+          <Button onClick={() => setAdding(true)} size="sm" className="h-9 gap-1.5 rounded-full bg-brand font-semibold text-white hover:bg-[#00b0d8]">
             <Plus className="h-4 w-4" aria-hidden />
             Add participant
           </Button>
         </div>
 
-        <div className="max-h-[65vh] overflow-y-auto rounded-lg border border-zinc-200">
+        <div className="max-h-[65vh] overflow-y-auto rounded-lg border border-line">
           {loading ? (
-            <p className="p-8 text-center text-sm text-zinc-400">Loading participants…</p>
+            <p className="p-8 text-center text-sm text-ink-soft">Loading participants…</p>
           ) : filtered.length === 0 ? (
-            <p className="p-8 text-center text-sm text-zinc-400">No participants found.</p>
+            <p className="p-8 text-center text-sm text-ink-soft">No participants found.</p>
           ) : (
             <table className="w-full min-w-[760px] text-sm">
-              <thead className="sticky top-0 bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500">
-                <tr className="border-b border-zinc-200">
+              <thead className="sticky top-0 bg-surface text-left text-[11px] uppercase tracking-wide text-ink-soft">
+                <tr className="border-b border-line">
                   <th className="px-3 py-2.5 font-semibold">#</th>
                   <th className="px-3 py-2.5 font-semibold">Photo</th>
                   <th className="px-3 py-2.5 font-semibold">Participant</th>
@@ -162,28 +162,28 @@ export function ParticipantsPanel({ onChanged }: { onChanged: () => void }) {
               </thead>
               <tbody>
                 {filtered.map((p, idx) => (
-                  <tr key={p.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60">
-                    <td className="px-3 py-2.5 tabular-nums text-zinc-400">{idx + 1}</td>
+                  <tr key={p.id} className="border-b border-line last:border-0 hover:bg-surface/60">
+                    <td className="px-3 py-2.5 tabular-nums text-ink-soft">{idx + 1}</td>
                     <td className="px-3 py-2.5">
                       <Thumb participant={p} />
                     </td>
                     <td className="max-w-52 px-3 py-2.5">
-                      <p className="flex items-center gap-1.5 font-medium text-zinc-900">
+                      <p className="flex items-center gap-1.5 font-medium text-ink">
                         <span className="truncate">{p.name}</span>
                         {p.needsReview && <FileWarning className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Needs review" />}
                       </p>
-                      {p.performance && <p className="truncate text-xs text-zinc-400">{p.performance}</p>}
+                      {p.performance && <p className="truncate text-xs text-ink-soft">{p.performance}</p>}
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex flex-col items-start gap-1">
-                        {p.category && <Badge variant="secondary" className="bg-teal-50 text-teal-700 hover:bg-teal-50 border border-teal-600/10 text-[10px]">{CATEGORY_LABELS[p.category] ?? p.category}</Badge>}
-                        {p.classification && <span className="text-[10px] font-medium text-zinc-400">{p.classification}</span>}
+                        {p.category && <Badge variant="secondary" className="bg-brand-soft text-brand-deep hover:bg-brand-soft border border-brand/30 text-[10px]">{CATEGORY_LABELS[p.category] ?? p.category}</Badge>}
+                        {p.classification && <span className="text-[10px] font-medium text-ink-soft">{p.classification}</span>}
                       </div>
                     </td>
-                    <td className="max-w-40 px-3 py-2.5 text-xs text-zinc-500">
+                    <td className="max-w-40 px-3 py-2.5 text-xs text-ink-soft">
                       <span className="line-clamp-2">{p.affiliation ?? '—'}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-center font-semibold tabular-nums text-zinc-700">{p.votes}</td>
+                    <td className="px-3 py-2.5 text-center font-semibold tabular-nums text-ink">{p.votes}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex justify-center">
                         <Switch checked={p.isActive} onCheckedChange={(v) => void toggleActive(p, v)} aria-label={`Toggle visibility for ${p.name}`} />
@@ -211,7 +211,7 @@ export function ParticipantsPanel({ onChanged }: { onChanged: () => void }) {
             </table>
           )}
         </div>
-        <p className="mt-2 text-[11px] text-zinc-400">
+        <p className="mt-2 text-[11px] text-ink-soft">
           {participants.length} participants · order matches the official participant sheet (use arrows to reorder) · photos are uploaded by administrators only
         </p>
       </CardContent>
@@ -255,7 +255,7 @@ export function ParticipantsPanel({ onChanged }: { onChanged: () => void }) {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             {deleting?.votes ? (
-              <AlertDialogAction className="bg-zinc-900 hover:bg-zinc-800" onClick={(e) => e.preventDefault()}>
+              <AlertDialogAction className="rounded-full bg-brand text-white hover:bg-[#00b0d8]" onClick={(e) => e.preventDefault()}>
                 Understood
               </AlertDialogAction>
             ) : (
@@ -272,9 +272,9 @@ export function ParticipantsPanel({ onChanged }: { onChanged: () => void }) {
 
 function Thumb({ participant }: { participant: AdminParticipant }) {
   return participant.photoUrl ? (
-    <img src={participant.photoUrl} alt={`Photo of ${participant.name}`} className="h-10 w-10 rounded-lg border border-zinc-200 object-cover" />
+    <img src={participant.photoUrl} alt={`Photo of ${participant.name}`} className="h-10 w-10 rounded-lg border border-line object-cover" />
   ) : (
-    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 text-zinc-300" aria-label="No photo">
+    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface text-ink-soft/60" aria-label="No photo">
       <UserRound className="h-5 w-5" />
     </span>
   )
@@ -406,17 +406,17 @@ function ParticipantDialog({
         <div className="space-y-4">
           {/* photo management */}
           {participant && (
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3.5">
-              <p className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
+            <div className="rounded-lg border border-line bg-surface/60 p-3.5">
+              <p className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-ink">
                 <Camera className="h-3.5 w-3.5" aria-hidden />
                 Participant photograph
               </p>
               <div className="flex items-start gap-3.5">
-                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-line bg-white">
                   {shownPhoto ? (
                     <img src={shownPhoto} alt="Selected photo preview" className="h-full w-full object-cover" />
                   ) : (
-                    <span className="flex h-full w-full items-center justify-center text-zinc-300">
+                    <span className="flex h-full w-full items-center justify-center text-ink-soft/60">
                       <UserRound className="h-8 w-8" />
                     </span>
                   )}
@@ -435,7 +435,7 @@ function ParticipantDialog({
                       {participant.photoUrl ? 'Replace photo' : 'Choose photo'}
                     </Button>
                     {pendingFile && (
-                      <Button size="sm" className="h-8 bg-teal-600 hover:bg-teal-700" disabled={photoBusy} onClick={() => void savePhoto()}>
+                      <Button size="sm" className="h-8 rounded-full bg-brand text-white hover:bg-[#00b0d8]" disabled={photoBusy} onClick={() => void savePhoto()}>
                         {photoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Upload now'}
                       </Button>
                     )}
@@ -445,7 +445,7 @@ function ParticipantDialog({
                       </Button>
                     )}
                   </div>
-                  <p className="text-[11px] leading-relaxed text-zinc-400">JPG, PNG or WebP · up to 5 MB · auto-resized to max 900px and converted to WebP. Upload real participant photos only.</p>
+                  <p className="text-[11px] leading-relaxed text-ink-soft">JPG, PNG or WebP, up to 15 MB. Resized automatically. A clear face photo works best.</p>
                 </div>
               </div>
             </div>
@@ -493,7 +493,7 @@ function ParticipantDialog({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-zinc-200 p-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-line p-3">
             <label className="flex items-center gap-2.5 text-sm">
               <Switch checked={draft.isActive} onCheckedChange={(v) => set('isActive', v)} aria-label="Visible to voters" />
               Visible to voters
@@ -513,7 +513,7 @@ function ParticipantDialog({
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={saving} className="bg-teal-600 font-semibold hover:bg-teal-700">
+          <Button onClick={() => void save()} disabled={saving} className="rounded-full bg-brand font-semibold text-white hover:bg-[#00b0d8]">
             {saving ? 'Saving…' : participant ? 'Save changes' : 'Add participant'}
           </Button>
         </DialogFooter>

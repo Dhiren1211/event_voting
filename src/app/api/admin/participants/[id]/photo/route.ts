@@ -19,7 +19,7 @@ type Params = { params: Promise<{ id: string }> }
 /**
  * Upload / replace a participant photograph.
  * - Validates MIME type (JPG/JPEG/PNG/WebP) and size (<= MAX_UPLOAD_MB).
- * - Optimizes with sharp: auto-rotate, max 900x900, WebP ~82 quality.
+ * - Optimizes with sharp: auto-rotate, max 720x720, WebP ~78 quality (~50 KB: 1,000 phones on venue Wi-Fi).
  * - Stored on disk under UPLOAD_DIR/participants, served via /api/media/...
  * - Never AI-generated imagery — actual participant photos uploaded by admins.
  */
@@ -54,15 +54,17 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   // Process with sharp — strips metadata, normalizes orientation, compresses.
   // (ESM/CJS interop: bundled import may expose sharp as default or namespace.)
-  const sharpMod = (await import('sharp')) as unknown as { default: typeof import('sharp') } & typeof import('sharp')
-  const sharp = typeof sharpMod === 'function' ? sharpMod : sharpMod.default ?? (sharpMod.sharp as typeof import('sharp'))
+  type SharpFn = typeof import('sharp')
+  const sharpMod = (await import('sharp')) as unknown
+  const sharp: SharpFn =
+    typeof sharpMod === 'function' ? (sharpMod as SharpFn) : (sharpMod as { default: SharpFn }).default
   let output: Buffer
   try {
     const input = Buffer.from(await file.arrayBuffer())
     output = await sharp(input)
       .rotate() // respect EXIF orientation
-      .resize(900, 900, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 82 })
+      .resize(720, 720, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 78 })
       .toBuffer()
   } catch (err) {
     console.error('sharp processing failed:', err)

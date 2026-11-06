@@ -1,11 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Search, ShieldCheck, CheckCircle2, AlertCircle, RotateCw } from 'lucide-react'
-import Link from 'next/link'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { Check, Fingerprint, ListChecks, PartyPopper, Search, Timer, X } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,20 +14,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { toast } from 'sonner'
-import { StatusBadge } from '@/components/voting/status-badge'
-import { ParticipantCard, type VoteButtonState } from '@/components/voting/participant-card'
-import {
-  CATEGORY_LABELS,
-  type DeviceVoteState,
-  type ParticipantPublic,
-  type QueueApiResponse,
-  type VotingStatusInfo,
-} from '@/lib/types'
+import { PublicShell } from '@/components/voting/public-shell'
+import { ParticipantCard, ParticipantPhoto, type VoteButtonState } from '@/components/voting/participant-card'
+import { CATEGORY_LABELS, type DeviceVoteState, type ParticipantPublic, type VotingStatusInfo } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { formatCountdown, useRoundCountdown } from '@/hooks/use-round-countdown'
 
 const TOKEN_KEY = 'ngtf_device_token'
-const PASS_KEY = 'ngtf_queue_pass'
 
 async function api<T>(url: string, init?: RequestInit): Promise<{ status: number; data: T | null }> {
   try {
@@ -39,56 +29,83 @@ async function api<T>(url: string, init?: RequestInit): Promise<{ status: number
       headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
       cache: 'no-store',
     })
-    const data = (await res.json().catch(() => null)) as (T & { ok?: boolean }) | null
+    const data = (await res.json().catch(() => null)) as T | null
     return { status: res.status, data }
   } catch {
     return { status: 0, data: null }
   }
 }
 
-function formatVotedAt(iso: string | null): string | null {
-  if (!iso) return null
+/**
+ * Device token (256-bit, base64url), created in the browser with the Web
+ * Crypto API — no network round trip before the ballot is usable. The server
+ * only ever stores its SHA-256 hash. Falls back to the server endpoint.
+ */
+async function getDeviceToken(): Promise<string | null> {
   try {
-    return new Date(iso).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
+    const saved = localStorage.getItem(TOKEN_KEY)
+    if (saved) return saved
   } catch {
-    return null
+    /* storage blocked — still allow voting with an in-memory token */
   }
+  let token: string | null = null
+  try {
+    const bytes = new Uint8Array(32)
+    crypto.getRandomValues(bytes)
+    token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  } catch {
+    const { data } = await api<{ token: string }>('/api/public/device', { method: 'POST' })
+    token = data?.token ?? null
+  }
+  if (token) {
+    try {
+      localStorage.setItem(TOKEN_KEY, token)
+    } catch {
+      /* ignore */
+    }
+  }
+  return token
 }
 
-export function VotingPage() {
-  const router = useRouter()
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading')
-  const [token, setToken] = useState<string | null>(null)
-  const [status, setStatus] = useState<VotingStatusInfo | null>(null)
-  const [participants, setParticipants] = useState<ParticipantPublic[]>([])
+export function VotingPage({
+  initialParticipants,
+  initialStatus,
+}: {
+  initialParticipants: ParticipantPublic[] | null
+  initialStatus: VotingStatusInfo | null
+}) {
+  const [participants, setParticipants] = useState<ParticipantPublic[]>(initialParticipants ?? [])
+  const [loaded, setLoaded] = useState(!!initialParticipants)
+  const [status, setStatus] = useState<VotingStatusInfo | null>(initialStatus)
   const [voteState, setVoteState] = useState<DeviceVoteState | null>(null)
+  const [myVoteId, setMyVoteId] = useState<number | null>(null)
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<string>('ALL')
+  const [category, setCategory] = useState('ALL')
   const [confirming, setConfirming] = useState<ParticipantPublic | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [showVotedScreen, setShowVotedScreen] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+  const [showThanks, setShowThanks] = useState(false)
+  const [networkNoticeDismissed, setNetworkNoticeDismissed] = useState(false)
   const tokenRef = useRef<string | null>(null)
+
+  // ---------------------------------------------------------------- data
 
   const loadParticipants = useCallback(async () => {
     const { status: code, data } = await api<{ participants: ParticipantPublic[] }>('/api/public/participants')
-    if (code === 200 && data?.participants) setParticipants(data.participants)
-    return code === 200
+    if (code === 200 && data?.participants) {
+      setParticipants(data.participants)
+      setLoaded(true)
+    }
   }, [])
 
   const loadStatus = useCallback(async () => {
     const { status: code, data } = await api<VotingStatusInfo>('/api/public/status')
-    if (code === 200 && data) {
-      setStatus({ status: data.status, closedPermanently: data.closedPermanently })
-      return data
-    }
-    return null
+    if (code === 200 && data?.status)
+      setStatus({
+        status: data.status,
+        closedPermanently: data.closedPermanently,
+        autoPauseAt: data.autoPauseAt ?? null,
+        serverNow: data.serverNow,
+      })
   }, [])
 
   const loadVoteState = useCallback(async (t: string) => {
@@ -97,185 +114,103 @@ export function VotingPage() {
       body: JSON.stringify({ token: t }),
     })
     if (code === 200 && data) {
-      const s = { voted: data.voted, participantName: data.participantName, votedAt: data.votedAt }
-      setVoteState(s)
-      return s
+      setVoteState({ voted: data.voted, participantName: data.participantName, votedAt: data.votedAt, ipVoted: data.ipVoted ?? false })
     }
-    return null
   }, [])
-
-  /**
-   * Queue admission gate — the voting page only renders for devices holding
-   * a valid admission pass while voting is OPEN. Devices without one are
-   * sent to the lobby, which puts them in line (admission is instant when
-   * slots are free, so low traffic never notices the queue).
-   */
-  const ensureAdmitted = useCallback(async (t: string): Promise<boolean> => {
-    let storedPass: string | null = null
-    try {
-      storedPass = sessionStorage.getItem(PASS_KEY)
-    } catch {
-      storedPass = null
-    }
-
-    const stateRes = await api<QueueApiResponse>('/api/public/queue/state', {
-      method: 'POST',
-      body: JSON.stringify({ token: t, ...(storedPass ? { pass: storedPass } : {}) }),
-    })
-    // Voting is no longer open — no admission needed, /vote renders its own banners.
-    if (stateRes.data && stateRes.data.votingStatus !== 'OPEN') return true
-
-    const held = stateRes.data?.queue
-    if (held?.status === 'ADMITTED') {
-      try {
-        sessionStorage.setItem(PASS_KEY, held.pass)
-      } catch {
-        /* ignore */
-      }
-      return true
-    }
-
-    // Not in line / no valid pass — try to join right now. When the queue
-    // has free slots this admits instantly and the visitor never sees a wait.
-    const joinRes = await api<QueueApiResponse>('/api/public/queue/join', {
-      method: 'POST',
-      body: JSON.stringify({ token: t }),
-    })
-    const joined = joinRes.data?.queue
-    if (joined?.status === 'ADMITTED') {
-      try {
-        sessionStorage.setItem(PASS_KEY, joined.pass)
-      } catch {
-        /* ignore */
-      }
-      return true
-    }
-    // Voting is open but this device must wait its turn.
-    return false
-  }, [])
-
-  const initialize = useCallback(async () => {
-    setPhase('loading')
-    // 1. Device token — generate once, persist in browser storage.
-    let t = localStorage.getItem(TOKEN_KEY)
-    if (!t) {
-      const { data } = await api<{ token: string }>('/api/public/device', { method: 'POST' })
-      if (data?.token) {
-        t = data.token
-        localStorage.setItem(TOKEN_KEY, t)
-      }
-    }
-    tokenRef.current = t
-    setToken(t)
-
-    // 2. Status + this device's vote state — the queue gate depends on both.
-    const st = await loadStatus()
-    const vs = t ? await loadVoteState(t) : null
-
-    // 3. Admission gate while voting is open and this device has not voted.
-    if (t && st?.status === 'OPEN' && !vs?.voted) {
-      const admitted = await ensureAdmitted(t)
-      if (!admitted) {
-        // Off to the lobby — the device keeps its place in line there.
-        router.replace('/queue?auto=1')
-        return
-      }
-    }
-
-    // 4. Participant list (loaded only for admitted / browse-mode devices).
-    const okParticipants = await loadParticipants()
-    setPhase(!!(st || okParticipants) ? 'ready' : 'error')
-  }, [ensureAdmitted, loadParticipants, loadStatus, loadVoteState, router])
 
   useEffect(() => {
-    void initialize()
-    // Poll voting status (keeps open/pause/close in sync without reload).
-    const statusTimer = setInterval(() => void loadStatus(), 20_000)
-    const participantsTimer = setInterval(() => void loadParticipants(), 60_000)
+    let cancelled = false
+    void (async () => {
+      const t = await getDeviceToken()
+      if (cancelled) return
+      tokenRef.current = t
+      await Promise.all([
+        t ? loadVoteState(t) : null,
+        initialParticipants ? null : loadParticipants(),
+        initialStatus ? null : loadStatus(),
+      ])
+    })()
+
+    const listTimer = setInterval(() => void loadParticipants(), 60_000)
     const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void loadStatus()
-        void loadParticipants()
-      }
+      if (document.visibilityState === 'visible') void loadStatus()
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
-      clearInterval(statusTimer)
-      clearInterval(participantsTimer)
+      cancelled = true
+      clearInterval(listTimer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [initialize, loadStatus, loadParticipants])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Show the dedicated confirmation screen right after this device votes.
+  // Keep open / paused / closed in sync without a reload. While paused,
+  // check more often so a new round shows up within a few seconds.
+  const isPaused = status?.status === 'PAUSED'
   useEffect(() => {
-    if (voteState?.voted) setShowVotedScreen(true)
-  }, [voteState?.voted])
+    const timer = setInterval(() => void loadStatus(), isPaused ? 5_000 : 15_000)
+    return () => clearInterval(timer)
+  }, [isPaused, loadStatus])
 
-  const categories = useMemo(() => {
-    const set = new Set<string>()
-    for (const p of participants) if (p.category) set.add(p.category)
-    return Array.from(set)
-  }, [participants])
+  // ---------------------------------------------------------------- round timer
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return participants.filter((p) => {
-      if (category !== 'ALL' && p.category !== category) return false
-      if (!q) return true
-      return (
-        p.name.toLowerCase().includes(q) ||
-        (p.performance ?? '').toLowerCase().includes(q) ||
-        (p.affiliation ?? '').toLowerCase().includes(q) ||
-        (p.members ?? '').toLowerCase().includes(q)
-      )
-    })
-  }, [participants, query, category])
+  const remainingMs = useRoundCountdown(status?.status === 'OPEN' ? status.autoPauseAt : null, status?.serverNow)
+  const roundOver = remainingMs === 0
+  // The moment the round runs out, ask the server (it flips to PAUSED) and
+  // keep asking every 2 s until it confirms.
+  useEffect(() => {
+    if (!roundOver) return
+    const first = setTimeout(() => void loadStatus(), 600)
+    const again = setInterval(() => void loadStatus(), 2_000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(again)
+    }
+  }, [roundOver, loadStatus])
 
-  const buttonState: VoteButtonState = voteState?.voted
-    ? 'voted'
-    : status?.status === 'OPEN'
-      ? 'open'
-      : status?.status === 'PAUSED'
-        ? 'paused'
-        : 'closed'
+  // ---------------------------------------------------------------- vote
 
   const submitVote = useCallback(
     async (participant: ParticipantPublic) => {
-      const t = tokenRef.current
+      let t = tokenRef.current
+      if (!t) t = tokenRef.current = await getDeviceToken()
       if (!t) {
-        toast.error('Your device is not registered yet. Please reload the page.')
+        toast.error('This browser can’t vote. Try another browser.')
         return
       }
       setSubmitting(true)
       try {
-        const { status: code, data } = await api<{
-          ok?: boolean
-          participantName?: string
-          votedAt?: string
-          error?: string
-        }>('/api/public/vote', { method: 'POST', body: JSON.stringify({ participantId: participant.id, token: t }) })
-        if (code === 200 && data?.ok) {
+        const { status: code, data } = await api<{ participantName?: string; votedAt?: string; error?: string }>(
+          '/api/public/vote',
+          { method: 'POST', body: JSON.stringify({ participantId: participant.id, token: t }) }
+        )
+        if (code === 200) {
+          setMyVoteId(participant.id)
           setVoteState({
             voted: true,
-            participantName: data.participantName ?? participant.name,
-            votedAt: data.votedAt ?? new Date().toISOString(),
+            participantName: data?.participantName ?? participant.name,
+            votedAt: data?.votedAt ?? new Date().toISOString(),
+            ipVoted: false,
           })
-          setShowVotedScreen(true)
-          toast.success('Your vote has been recorded. Thank you!')
+          setShowThanks(true)
+          window.scrollTo({ top: 0 })
         } else if (code === 409) {
           await loadVoteState(t)
-          setShowVotedScreen(true)
-          toast.info('This device has already voted.')
+          setShowThanks(true)
+          toast('This phone has already voted.')
+        } else if (code === 403 && data?.error === 'ALREADY_VOTED_FROM_NETWORK') {
+          setVoteState((prev) => (prev ? { ...prev, ipVoted: true } : prev))
+          setNetworkNoticeDismissed(false)
         } else if (code === 403) {
           await loadStatus()
-          toast.error(data?.error === 'VOTING_PAUSED' ? 'Voting is currently paused.' : 'Voting is closed.')
+          toast(data?.error === 'VOTING_PAUSED' ? 'Voting is paused.' : 'Voting is closed.')
         } else if (code === 404) {
-          toast.error('This participant is no longer accepting votes.')
+          toast('That performance is no longer available.')
           await loadParticipants()
         } else if (code === 429) {
-          toast.error('Too many requests. Please wait a moment and try again.')
+          toast('Too many attempts. Wait a moment and try again.')
         } else {
-          toast.error('The vote could not be saved. Please try again.')
+          toast('Your vote didn’t go through. Check your connection and try again.')
         }
       } finally {
         setSubmitting(false)
@@ -285,253 +220,396 @@ export function VotingPage() {
     [loadParticipants, loadStatus, loadVoteState]
   )
 
-  const handleManualRefresh = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      await Promise.all([loadStatus(), loadParticipants()])
-      if (tokenRef.current) await loadVoteState(tokenRef.current)
-      toast.success('Updated.')
-    } finally {
-      setRefreshing(false)
+  // ---------------------------------------------------------------- derived
+
+  const categories = useMemo(() => {
+    const seen: string[] = []
+    for (const p of participants) if (p.category && !seen.includes(p.category)) seen.push(p.category)
+    return seen
+  }, [participants])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return participants.filter((p) => {
+      if (category !== 'ALL' && p.category !== category) return false
+      if (!q) return true
+      return [p.name, p.performance, p.affiliation, p.members].some((v) => (v ?? '').toLowerCase().includes(q))
+    })
+  }, [participants, query, category])
+
+  const sections = useMemo(() => {
+    if (query.trim() || category !== 'ALL') return [{ key: 'results', title: null as string | null, items: filtered }]
+    const order: string[] = []
+    const byCat = new Map<string, ParticipantPublic[]>()
+    for (const p of filtered) {
+      const k = p.category ?? 'OTHER'
+      if (!byCat.has(k)) {
+        byCat.set(k, [])
+        order.push(k)
+      }
+      byCat.get(k)!.push(p)
     }
-  }, [loadParticipants, loadStatus, loadVoteState])
+    return order.map((k) => ({ key: k, title: CATEGORY_LABELS[k] ?? 'Other', items: byCat.get(k)! }))
+  }, [query, category, filtered])
 
-  // ------------------------------------------------------------------ render
+  const effectiveStatus = status?.status === 'OPEN' && roundOver ? 'PAUSED' : status?.status
+  const buttonState: VoteButtonState = voteState?.voted
+    ? 'voted'
+    : effectiveStatus === 'OPEN'
+      ? 'open'
+      : effectiveStatus === 'PAUSED'
+        ? 'paused'
+        : 'closed'
 
-  const votedScreen = showVotedScreen && voteState?.voted
+  const voted = !!voteState?.voted
+  const myParticipant =
+    (myVoteId !== null ? participants.find((p) => p.id === myVoteId) : undefined) ??
+    participants.find((p) => p.name === voteState?.participantName)
+  const networkBlocked = !!voteState && !voted && voteState.ipVoted && !networkNoticeDismissed
+
+  // ---------------------------------------------------------------- render
+
+  // Where this device is in the voting journey (drives the step tracker).
+  const step: 1 | 2 | 3 = voted ? 3 : confirming ? 2 : 1
+  const steps: StepItem[] = [
+    { title: 'Choose', detail: voted ? voteState?.participantName ?? null : confirming?.name ?? 'Pick a performance', icon: ListChecks },
+    { title: 'Confirm', detail: voted ? 'Confirmed' : 'Check your choice', icon: Fingerprint },
+    { title: 'Done', detail: voted ? 'Vote recorded' : 'One vote per phone', icon: PartyPopper },
+  ]
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50">
-      <main className="flex-1">
-        <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8">
-          {/* ------------------------------------------------ header */}
-          <header className="mb-6">
-            {/* Kept for accessibility — the visual title lives on the landing page. */}
-            <h1 className="sr-only">Audience voting — Nepal Grand Tihar Festival 2026</h1>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:text-sm">
-                Official audience voting
-              </p>
-              <StatusBadge status={status?.status ?? null} />
-            </div>
+    <PublicShell status={effectiveStatus ?? null}>
+      <div className="lg:grid lg:grid-cols-[230px_1fr] lg:gap-16 lg:pt-10">
+        <aside className="hidden lg:block">
+          <div className="sticky top-10">
+            <VoteSteps steps={steps} current={step} allDone={voted} />
+          </div>
+        </aside>
 
-            <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-teal-600/15 bg-teal-50/60 px-4 py-3.5 text-sm text-teal-900 sm:text-base">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" aria-hidden />
-              <span>
-                Select <strong>one</strong> performance and confirm. Each device can vote <strong>once</strong> — the choice is
-                final and cannot be changed.
-              </span>
-            </div>
-          </header>
+        <div className="min-w-0">
+          <MobileSteps steps={steps} current={step} allDone={voted} />
 
-          {phase === 'loading' && <LoadingSkeleton />}
-
-          {phase === 'error' && (
-            <div className="flex flex-col items-center gap-4 rounded-xl border border-zinc-200 bg-white p-10 text-center">
-              <AlertCircle className="h-10 w-10 text-zinc-300" aria-hidden />
-              <div>
-                <p className="font-semibold text-zinc-900">Could not load the voting page</p>
-                <p className="mt-1 text-sm text-zinc-500">Check your connection and try again.</p>
+          {showThanks && voted ? (
+            /* ------------------------------------- thank-you */
+            <section aria-live="polite" className="max-w-md pt-6 lg:pt-0">
+              <p className="text-[16px] font-medium text-brand">Step 3</p>
+              <h1 className="mt-2 text-[30px] font-bold leading-tight tracking-tight sm:text-[34px]">
+                Thank you for voting!
+              </h1>
+              <div className="mt-7 flex items-center gap-4 rounded-[4px] border-[1.5px] border-brand bg-white p-3">
+                <ParticipantPhoto participant={myParticipant} className="aspect-square w-20 shrink-0 rounded-[2px]" />
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-brand-deep">Your vote</p>
+                  <p className="mt-0.5 truncate text-[17px] font-semibold">{voteState.participantName}</p>
+                  {myParticipant?.performance ? (
+                    <p className="truncate text-[13px] text-subtle">{myParticipant.performance}</p>
+                  ) : null}
+                </div>
+                <span className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand">
+                  <Check className="h-5 w-5 text-white" strokeWidth={3} aria-hidden />
+                </span>
               </div>
-              <Button onClick={() => void initialize()} variant="outline" className="gap-2">
-                <RotateCw className="h-4 w-4" aria-hidden />
-                Retry
-              </Button>
-            </div>
-          )}
-
-          {phase === 'ready' && (
+              <p className="mt-5 text-[15px] text-subtle">Shubha Tihar — enjoy the rest of the show.</p>
+              <button
+                type="button"
+                onClick={() => setShowThanks(false)}
+                className="mt-9 h-[52px] w-full rounded-full border-[1.5px] border-brand bg-white px-8 text-[16px] font-semibold text-brand-deep hover:bg-brand-soft sm:w-auto"
+              >
+                View all performances
+              </button>
+            </section>
+          ) : networkBlocked ? (
+            <section className="max-w-md pt-6 lg:pt-0">
+              <h1 className="text-[28px] font-bold tracking-tight">This network has already voted</h1>
+              <p className="mt-2 text-[15px] leading-relaxed text-subtle">
+                Only one vote per network is allowed right now. Switch to mobile data to vote.
+              </p>
+              <button
+                type="button"
+                onClick={() => setNetworkNoticeDismissed(true)}
+                className="mt-8 h-[52px] w-full rounded-full border-[1.5px] border-brand bg-white px-8 text-[16px] font-semibold text-brand-deep hover:bg-brand-soft sm:w-auto"
+              >
+                View all performances
+              </button>
+            </section>
+          ) : (
             <>
-              {/* ------------------------------------- voted confirmation */}
-              {votedScreen ? (
-                <section
-                  aria-label="Vote confirmation"
-                  className="mx-auto my-8 flex max-w-md flex-col items-center rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm"
-                >
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-50 ring-1 ring-teal-600/20">
-                    <CheckCircle2 className="h-9 w-9 text-teal-600" aria-hidden />
-                  </span>
-                  <h2 className="mt-5 text-2xl font-bold text-zinc-900">Your vote has been recorded</h2>
-                  <p className="mt-2.5 text-base text-zinc-600">
-                    Thank you for participating in the Nepal Grand Tihar Festival 2026.
-                  </p>
-                  <div className="mt-6 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3.5">
-                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">You voted for</p>
-                    <p className="mt-1 text-lg font-semibold text-zinc-900">{voteState.participantName}</p>
-                    {voteState.votedAt ? (
-                      <p className="mt-1.5 text-sm text-zinc-500">Recorded {formatVotedAt(voteState.votedAt)}</p>
-                    ) : null}
+              <p className="pt-4 text-[16px] font-medium text-brand lg:pt-0">{voted ? 'All done' : 'Step 1'}</p>
+              <h1 className="mt-2 max-w-xl text-[28px] font-bold leading-[1.2] tracking-tight sm:text-[34px]">
+                {voted ? 'Tonight’s performances' : 'Who gets your vote tonight?'}
+              </h1>
+              <p className="mt-2 text-[15px] text-subtle">
+                {voted ? (
+                  <>
+                    You voted for <span className="font-semibold text-heading">{voteState.participantName}</span>.
+                  </>
+                ) : (
+                  'Tap a performance to choose it. One vote per phone.'
+                )}
+              </p>
+
+              <RoundBanner status={status} effectiveStatus={effectiveStatus} remainingMs={remainingMs} voted={voted} />
+
+              {/* ------------------------------------- search + categories (sticky) */}
+              <div className="sticky top-0 z-10 -mx-4 mt-6 bg-white/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:-mx-6 sm:px-6">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" aria-hidden />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search performers"
+                    aria-label="Search performers"
+                    enterKeyHint="search"
+                    className="h-12 w-full rounded-full border-[1.5px] border-canvas-line bg-white pl-11 pr-11 text-[16px] text-heading outline-none placeholder:text-subtle/80 focus-visible:border-brand [&::-webkit-search-cancel-button]:hidden"
+                  />
+                  {query ? (
+                    <button
+                      type="button"
+                      onClick={() => setQuery('')}
+                      aria-label="Clear search"
+                      className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-subtle hover:text-heading"
+                    >
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  ) : null}
+                </div>
+                {categories.length > 1 ? (
+                  <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 [-ms-overflow-style:none] [scrollbar-width:none] sm:-mx-6 sm:px-6 [&::-webkit-scrollbar]:hidden">
+                    {['ALL', ...categories].map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setCategory(c)}
+                        aria-pressed={category === c}
+                        className={cn(
+                          'h-9 shrink-0 whitespace-nowrap rounded-full border-[1.5px] px-4 text-[13px] font-semibold transition-colors',
+                          category === c
+                            ? 'border-brand bg-brand-soft text-brand-deep'
+                            : 'border-canvas-line bg-white text-subtle hover:border-brand/60 hover:text-heading'
+                        )}
+                      >
+                        {c === 'ALL' ? 'All' : CATEGORY_LABELS[c] ?? c}
+                      </button>
+                    ))}
                   </div>
-                  <p className="mt-5 text-sm leading-relaxed text-zinc-600">
-                    This device has used its single vote. It is no longer possible to vote again or change the choice
-                    from this device.
-                  </p>
-                  <Button variant="ghost" className="mt-6 text-base text-teal-700 hover:text-teal-800" onClick={() => setShowVotedScreen(false)}>
-                    Browse participants
-                  </Button>
-                </section>
+                ) : null}
+              </div>
+
+              {/* ------------------------------------- grid */}
+              {!loaded ? (
+                <GridSkeleton />
+              ) : filtered.length === 0 ? (
+                <p className="py-16 text-center text-[15px] text-subtle">No matches for &ldquo;{query.trim()}&rdquo;</p>
               ) : (
-                <>
-                  {/* ------------------------------------- status banners */}
-                  {status?.status === 'PAUSED' && (
-                    <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-amber-600/20 bg-amber-50 px-4 py-3.5 text-sm text-amber-800 sm:text-base">
-                      <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
-                      Voting is temporarily paused. Please check back soon — the organizer will resume it shortly.
-                    </div>
-                  )}
-                  {status?.status === 'CLOSED' && (
-                    <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-zinc-300 bg-zinc-100 px-4 py-3.5 text-sm text-zinc-700 sm:text-base">
-                      <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
-                      {status.closedPermanently
-                        ? 'Voting has ended. Thank you to everyone who participated!'
-                        : 'Voting is not open yet. It will open when the organizer starts it.'}
-                    </div>
-                  )}
-
-                  {/* ------------------------------------- search + filters */}
-                  <div className="mb-5 space-y-3">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden />
-                      <Input
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search participant, group, university…"
-                        aria-label="Search participants"
-                        className="h-11 rounded-lg border-zinc-200 bg-white pl-9 text-base"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      <FilterChip active={category === 'ALL'} onClick={() => setCategory('ALL')}>
-                        All ({participants.length})
-                      </FilterChip>
-                      {categories.map((c) => (
-                        <FilterChip key={c} active={category === c} onClick={() => setCategory(c)}>
-                          {CATEGORY_LABELS[c] ?? c}
-                        </FilterChip>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* ------------------------------------- participant grid */}
-                  {filtered.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-10 text-center text-base text-zinc-500">
-                      No participants match your search.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
-                      {filtered.map((p) => (
+                sections.map((sec) => (
+                  <section key={sec.key} aria-label={sec.title ?? 'Search results'} className="mt-6">
+                    {sec.title ? (
+                      <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.14em] text-subtle">{sec.title}</h2>
+                    ) : null}
+                    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4">
+                      {sec.items.map((p) => (
                         <ParticipantCard
                           key={p.id}
                           participant={p}
                           buttonState={buttonState}
                           submitting={submitting}
                           onVote={setConfirming}
+                          isMyVote={voted && p.id === myParticipant?.id}
                         />
                       ))}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {!votedScreen && (
-                <div className="mt-6 flex justify-center">
-                  <Button variant="ghost" size="sm" onClick={() => void handleManualRefresh()} disabled={refreshing} className="gap-2 text-sm text-zinc-500 hover:text-zinc-700">
-                    <RotateCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} aria-hidden />
-                    Refresh list
-                  </Button>
-                </div>
+                    </ul>
+                  </section>
+                ))
               )}
             </>
           )}
         </div>
-      </main>
+      </div>
 
-      {/* ------------------------------------------------ sticky footer */}
-      <footer className="mt-auto border-t border-zinc-200 bg-white">
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-between gap-1.5 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center sm:flex-row sm:text-left">
-          <Link href="/" className="text-sm font-medium text-teal-700 hover:text-teal-800">
-            ← Event home
-          </Link>
-          <p className="text-xs text-zinc-500 sm:text-sm">Voting is anonymous · One vote per device</p>
-        </div>
-      </footer>
-
-      {/* ------------------------------------------------ confirm dialog */}
-      <AlertDialog open={!!confirming} onOpenChange={(open) => !open && setConfirming(null)}>
-        <AlertDialogContent className="max-w-sm rounded-xl">
+      {/* ------------------------------------------------ confirm (step 2) */}
+      <AlertDialog open={!!confirming} onOpenChange={(open) => !open && !submitting && setConfirming(null)}>
+        <AlertDialogContent className="max-w-[23rem] gap-0 rounded-[6px] border-0 bg-white p-6 text-heading shadow-2xl">
           <AlertDialogHeader className="text-left">
-            <AlertDialogTitle>Confirm your vote</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div>
-                <span>You are about to vote for:</span>
-                <span className="mt-2 block rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-3 text-sm">
-                  <span className="block text-base font-semibold text-zinc-900">{confirming?.name}</span>
-                  {confirming?.performance ? (
-                    <span className="mt-0.5 block text-sm text-zinc-500">{confirming.performance}</span>
-                  ) : null}
-                  {confirming?.affiliation ? (
-                    <span className="block text-sm text-zinc-500">{confirming.affiliation}</span>
-                  ) : null}
-                </span>
-                <span className="mt-3 block text-sm font-medium text-amber-700">
-                  Each device can vote only once. This choice is final and cannot be changed.
-                </span>
-              </div>
-            </AlertDialogDescription>
+            <p className="text-[15px] font-medium text-brand">Step 2</p>
+            <AlertDialogTitle className="mt-1 text-[22px] font-bold leading-snug tracking-tight text-heading">
+              Confirm your vote
+            </AlertDialogTitle>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row">
-            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+          {confirming ? (
+            <div className="mt-4 rounded-[4px] border-[1.5px] border-brand p-2 text-center">
+              <ParticipantPhoto participant={confirming} eager className="aspect-[4/3] w-full rounded-[2px]" />
+              <p className="mt-3 text-[17px] font-semibold text-brand-deep">{confirming.name}</p>
+              {confirming.performance ? <p className="text-[13px] text-subtle">{confirming.performance}</p> : null}
+            </div>
+          ) : null}
+          <AlertDialogDescription className="mt-3 text-[14px] text-subtle">
+            You can only vote once — this can’t be changed later.
+          </AlertDialogDescription>
+          <AlertDialogFooter className="mt-6 flex-col gap-2 sm:flex-col sm:space-x-0">
             <AlertDialogAction
               disabled={submitting}
-              className="bg-teal-600 hover:bg-teal-700"
+              className="shadow-pill h-[52px] w-full rounded-full bg-brand text-[16px] font-semibold text-white hover:bg-[#00b0d8]"
               onClick={(e) => {
                 e.preventDefault()
                 if (confirming) void submitVote(confirming)
               }}
             >
-              {submitting ? 'Recording vote…' : 'Confirm vote'}
+              {submitting ? 'Sending…' : 'Confirm vote'}
             </AlertDialogAction>
+            <AlertDialogCancel
+              disabled={submitting}
+              className="mt-0 h-12 w-full rounded-full border-0 bg-transparent text-[15px] font-medium text-subtle shadow-none hover:bg-canvas-high hover:text-heading"
+            >
+              Choose someone else
+            </AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PublicShell>
   )
 }
 
-function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+// ---------------------------------------------------------------- step tracker
+
+type StepItem = { title: string; detail: string | null; icon: React.ComponentType<{ className?: string }> }
+
+/** Vertical step tracker (desktop): icon + label on the left, progress rail on the right. */
+function VoteSteps({ steps, current, allDone }: { steps: StepItem[]; current: number; allDone: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
+    <ol aria-label="Voting steps" className="relative">
+      {/* rail */}
+      <span aria-hidden className="absolute right-[11px] top-2 bottom-2 w-[2px] bg-canvas-line" />
+      <span
+        aria-hidden
+        className="absolute right-[11px] top-2 w-[2px] bg-brand transition-[height] duration-500"
+        style={{ height: allDone ? 'calc(100% - 1rem)' : `${((current - 1) / (steps.length - 1)) * 100}%` }}
+      />
+      {steps.map((s, i) => {
+        const n = i + 1
+        const done = allDone || n < current
+        const active = !allDone && n === current
+        const Icon = s.icon
+        return (
+          <li key={s.title} className="relative flex items-start gap-4 pb-12 last:pb-0" aria-current={active ? 'step' : undefined}>
+            <Icon className={cn('mt-0.5 h-7 w-7 shrink-0', done || active ? 'text-brand' : 'text-canvas-line')} />
+            <div className="min-w-0 flex-1 pr-10">
+              <p className={cn('text-[11px] font-medium', done || active ? 'text-subtle' : 'text-canvas-line')}>Step {n}</p>
+              <p className={cn('mt-0.5 text-[15px] font-medium leading-snug', done || active ? 'text-heading' : 'text-subtle/70')}>
+                {s.title}
+              </p>
+              {s.detail ? (
+                <p className={cn('mt-0.5 line-clamp-2 text-[12px]', done || active ? 'text-subtle' : 'text-subtle/60')}>{s.detail}</p>
+              ) : null}
+            </div>
+            <StepDot done={done} active={active} className="absolute right-0 top-1" />
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+/** Compact horizontal step tracker for phones / tablets. */
+function MobileSteps({ steps, current, allDone }: { steps: StepItem[]; current: number; allDone: boolean }) {
+  return (
+    <ol aria-label="Voting steps" className="flex items-center pt-2 lg:hidden">
+      {steps.map((s, i) => {
+        const n = i + 1
+        const done = allDone || n < current
+        const active = !allDone && n === current
+        return (
+          <li key={s.title} className="flex flex-1 items-center last:flex-none" aria-current={active ? 'step' : undefined}>
+            <span className="flex items-center gap-2">
+              <StepDot done={done} active={active} />
+              <span className={cn('text-[13px] font-medium', done || active ? 'text-heading' : 'text-subtle/70')}>{s.title}</span>
+            </span>
+            {n < steps.length ? (
+              <span aria-hidden className={cn('mx-3 h-[2px] flex-1 rounded-full', done ? 'bg-brand' : 'bg-canvas-line')} />
+            ) : null}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function StepDot({ done, active, className }: { done: boolean; active: boolean; className?: string }) {
+  return (
+    <span
+      aria-hidden
       className={cn(
-        'shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition-colors',
-        active
-          ? 'border-teal-600 bg-teal-600 text-white'
-          : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50'
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
+        done && 'bg-brand',
+        active && 'border-2 border-brand bg-white',
+        !done && !active && 'bg-canvas-line',
+        className
       )}
     >
-      {children}
-    </button>
+      {done ? <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} /> : null}
+    </span>
   )
 }
 
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
-            <Skeleton className="aspect-[4/3] w-full rounded-none" />
-            <div className="space-y-2.5 p-4">
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-5 w-3/4" />
-              <Skeleton className="h-3.5 w-1/2" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-          </div>
-        ))}
+/** Round timer while open; a clear notice while paused / closed. */
+function RoundBanner({
+  status,
+  effectiveStatus,
+  remainingMs,
+  voted,
+}: {
+  status: VotingStatusInfo | null
+  effectiveStatus: VotingStatusInfo['status'] | undefined
+  remainingMs: number | null
+  voted: boolean
+}) {
+  if (!status) return null
+
+  if (effectiveStatus === 'OPEN' && remainingMs !== null && remainingMs > 0) {
+    const urgent = remainingMs <= 60_000
+    return (
+      <div
+        role="timer"
+        aria-live="off"
+        className={cn(
+          'mt-6 flex items-center gap-3 rounded-[4px] border-[1.5px] px-4 py-3',
+          urgent ? 'border-alert/60 bg-alert/5' : 'border-brand/60 bg-brand-soft'
+        )}
+      >
+        <Timer className={cn('h-5 w-5 shrink-0', urgent ? 'text-alert' : 'text-brand-deep')} aria-hidden />
+        <p className="min-w-0 flex-1 text-[14px] font-medium leading-snug text-heading">
+          {voted ? 'This voting round ends in' : 'Vote now — this round ends in'}
+        </p>
+        <span className={cn('text-[24px] font-bold tabular-nums leading-none', urgent ? 'text-alert' : 'text-brand-deep')}>
+          {formatCountdown(remainingMs)}
+        </span>
       </div>
-    </div>
+    )
+  }
+
+  if (effectiveStatus === 'OPEN') return null
+
+  return (
+    <p role="status" className="mt-6 rounded-[4px] border-[1.5px] border-canvas-line bg-canvas-high px-4 py-3 text-[14px] font-medium text-heading">
+      {effectiveStatus === 'PAUSED'
+        ? 'Voting is paused. The next round will start shortly — this page updates by itself.'
+        : status.closedPermanently
+          ? 'Voting has ended. Thank you for taking part!'
+          : 'Voting opens soon. This page updates by itself.'}
+    </p>
+  )
+}
+
+function GridSkeleton() {
+  return (
+    <ul aria-busy="true" aria-label="Loading performers" className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <li key={i}>
+          <Skeleton className="aspect-square w-full rounded-[4px] bg-canvas-high" />
+          <Skeleton className="mt-2.5 h-4 w-3/4 bg-canvas-high" />
+          <Skeleton className="mt-1.5 h-3.5 w-1/2 bg-canvas-high" />
+        </li>
+      ))}
+    </ul>
   )
 }

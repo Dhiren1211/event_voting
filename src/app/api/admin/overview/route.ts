@@ -4,14 +4,19 @@ import { jsonError, jsonOk, getClientIp } from '@/lib/api'
 import { getAdmin, audit } from '@/lib/auth'
 import { getVotingState } from '@/lib/voting'
 import { cacheGet, cacheSet } from '@/lib/cache'
+import { env } from '@/lib/env'
 
 export const dynamic = 'force-dynamic'
 
 export type Overview = {
   status: string
   closedPermanently: boolean
+  oneVotePerIp: boolean
   openedAt: string | null
   closedAt: string | null
+  autoPauseAt: string | null
+  roundMinutes: number
+  serverNow?: string
   totalVotes: number
   participantCount: number
   activeParticipantCount: number
@@ -28,7 +33,7 @@ export async function GET(req: NextRequest) {
   if (!admin) return jsonError('UNAUTHORIZED', 401)
 
   const cached = cacheGet<Overview>('admin:overview')
-  if (cached) return jsonOk(cached)
+  if (cached) return jsonOk({ ...cached, serverNow: new Date().toISOString() })
 
   await ensureDb()
   const now = Date.now()
@@ -59,8 +64,11 @@ export async function GET(req: NextRequest) {
   const overview: Overview = {
     status: state.status,
     closedPermanently: state.closedPermanently,
+    oneVotePerIp: state.oneVotePerIp,
     openedAt: state.openedAt,
     closedAt: state.closedAt,
+    autoPauseAt: state.autoPauseAt,
+    roundMinutes: env.votingRoundMinutes,
     totalVotes,
     participantCount,
     activeParticipantCount,
@@ -81,5 +89,5 @@ export async function GET(req: NextRequest) {
   }
 
   cacheSet('admin:overview', overview, 1_000)
-  return jsonOk(overview)
+  return jsonOk({ ...overview, serverNow: new Date().toISOString() })
 }

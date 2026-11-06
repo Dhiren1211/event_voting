@@ -44,10 +44,10 @@ export default function AdminPage() {
 
   if (state.phase === 'checking') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+      <div className="flex min-h-screen items-center justify-center bg-surface">
         <div className="flex flex-col items-center gap-3">
-          <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-200 border-t-teal-600" aria-hidden />
-          <p className="text-sm text-zinc-400">Checking session…</p>
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-brand" aria-hidden />
+          <p className="text-sm text-ink-soft">Checking session…</p>
         </div>
       </div>
     )

@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Lock, ShieldCheck } from 'lucide-react'
+import { Lock } from 'lucide-react'
+import { Wordmark } from '@/components/voting/public-shell'
 
 export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void }) {
   const [username, setUsername] = useState('')
@@ -44,13 +45,13 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
-      <Card className="w-full max-w-sm rounded-xl border-zinc-200 shadow-sm">
-        <CardHeader className="space-y-1.5 text-center">
-          <span className="mx-auto mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-teal-50 ring-1 ring-teal-600/20">
-            <ShieldCheck className="h-5.5 w-5.5 text-teal-600" aria-hidden />
-          </span>
-          <CardTitle className="text-lg font-bold">NCB Voting — Admin</CardTitle>
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-white px-4">
+      <div className="absolute left-6 top-7 sm:left-10"><Wordmark /></div>
+      <div aria-hidden className="bg-dots pointer-events-none fixed inset-0" />
+      <Card className="relative w-full max-w-sm rounded-md border-[1.5px] border-line shadow-none">
+        <CardHeader className="space-y-1.5 text-left">
+          <p className="text-[15px] font-medium text-brand">Administrators</p>
+          <CardTitle className="text-[26px] font-bold tracking-tight text-ink">Sign in</CardTitle>
           <CardDescription className="text-xs">
             Nepal Grand Tihar Festival 2026 · Secure administrative access
           </CardDescription>
@@ -65,7 +66,7 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={submitting}
-                className="h-10"
+                className="h-11 rounded-md"
               />
             </div>
             <div className="space-y-1.5">
@@ -77,10 +78,10 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={submitting}
-                className="h-10"
+                className="h-11 rounded-md"
               />
             </div>
-            <Button type="submit" disabled={submitting} className="h-10 w-full gap-2 font-semibold">
+            <Button type="submit" disabled={submitting} className="shadow-pill h-12 w-full gap-2 rounded-full text-[15px] font-semibold">
               <Lock className="h-4 w-4" aria-hidden />
               {submitting ? 'Signing in…' : 'Sign in'}
             </Button>

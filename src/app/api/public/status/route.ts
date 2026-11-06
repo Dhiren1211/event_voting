@@ -16,5 +16,7 @@ export async function GET(req: NextRequest) {
   return jsonOk({
     status: state.status,
     closedPermanently: state.closedPermanently,
+    autoPauseAt: state.autoPauseAt,
+    serverNow: new Date().toISOString(), // lets phones correct for clock skew in the countdown
   })
 }

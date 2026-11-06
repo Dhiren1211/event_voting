@@ -20,7 +20,7 @@ export function QrPanel() {
   // Default to the voting lobby on the current origin (works when reached via the public URL).
   useEffect(() => {
     if (!url && typeof window !== 'undefined') {
-      setUrl(window.location.origin + '/queue?auto=1')
+      setUrl(window.location.origin + '/')
     }
   }, [url])
 
@@ -53,22 +53,21 @@ export function QrPanel() {
     <Card className="rounded-xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <QrCode className="h-4.5 w-4.5 text-teal-600" aria-hidden />
+          <QrCode className="h-4.5 w-4.5 text-brand-deep" aria-hidden />
           Voting QR code
         </CardTitle>
         <CardDescription className="text-xs">
-          Print this code and place it on audience tables. Scanning it with a phone camera opens the voting lobby
-          (/queue) — audience members take a number in line and the voting page opens for them automatically. No app
-          installation or registration required.
+          Print this code for the audience. Scanning it opens the ballot directly. QR codes printed earlier
+          (pointing to /queue) still work: they redirect to the ballot.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
-          <div className="mx-auto w-fit rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
+          <div className="mx-auto w-fit rounded-xl border border-line bg-white p-3 shadow-sm">
             {qrSrc ? (
               <img src={qrSrc} alt="Voting page QR code preview" width={220} height={220} className="h-[220px] w-[220px]" />
             ) : (
-              <div className="flex h-[220px] w-[220px] items-center justify-center bg-zinc-50 text-xs text-zinc-400">
+              <div className="flex h-[220px] w-[220px] items-center justify-center bg-surface text-xs text-ink-soft">
                 Enter a valid URL
               </div>
             )}
@@ -82,7 +81,7 @@ export function QrPanel() {
                   id="qr-url"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://your-domain.com/queue"
+                  placeholder="https://your-domain.com/"
                   className="h-9"
                   inputMode="url"
                 />
@@ -90,14 +89,14 @@ export function QrPanel() {
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="text-[11px] text-zinc-400">
+              <p className="text-[11px] text-ink-soft">
                 Defaults to the current deployment URL. If you deploy under a different domain, update this field and
                 regenerate — the QR encodes exactly what is shown here.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2.5">
-              <Button onClick={() => void download('png')} disabled={!valid || downloading !== null} className="gap-2 bg-teal-600 font-semibold hover:bg-teal-700">
+              <Button onClick={() => void download('png')} disabled={!valid || downloading !== null} className="gap-2 rounded-full bg-brand font-semibold text-white hover:bg-[#00b0d8]">
                 <Download className="h-4 w-4" aria-hidden />
                 {downloading === 'png' ? 'Preparing…' : 'Download PNG (2048px)'}
               </Button>
@@ -107,8 +106,8 @@ export function QrPanel() {
               </Button>
             </div>
 
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3 text-[11px] leading-relaxed text-zinc-500">
-              <p className="font-semibold text-zinc-600">Printing tips</p>
+            <div className="rounded-lg border border-line bg-surface/60 p-3 text-[11px] leading-relaxed text-ink-soft">
+              <p className="font-semibold text-ink">Printing tips</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 <li>Print at least 4 × 4 cm with quiet-zone margin so phone cameras can focus.</li>
                 <li>Error correction level H — the code stays scannable even if partially covered.</li>
